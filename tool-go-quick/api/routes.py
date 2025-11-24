@@ -6,6 +6,7 @@ import os
 import sys
 import base64
 from flask import request, jsonify, Response
+import threading
 
 # Thêm parent directory vào path để import main
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,87 @@ def get_cccd_extractor():
         from main import CCCDExtractor as _CCCDExtractor
         CCCDExtractor = _CCCDExtractor
     return CCCDExtractor
+
+_model_cache = {
+    'yolo_model1': None,
+    'yolo_model2': None,
+    'yolo_model3': None,
+    'vietocr_detector': None,
+    'base_dir': None,
+    'lock': threading.Lock()
+}
+
+def get_model_cache():
+    """Lấy hoặc khởi tạo model cache"""
+    global _model_cache
+    
+    if _model_cache['yolo_model1'] is not None:
+        return _model_cache
+    
+    with _model_cache['lock']:
+        if _model_cache['yolo_model1'] is not None:
+            return _model_cache
+        
+        print("🔄 Đang load models lần đầu (sẽ cache để tái sử dụng)...")
+        
+        import main
+        main_file_dir = os.path.dirname(os.path.abspath(main.__file__))
+        base_dir = os.path.join(main_file_dir, "__pycache__")
+        _model_cache['base_dir'] = base_dir
+        
+        try:
+            from ultralytics import YOLO
+            print("  ⏳ Loading YOLO model1 (best.pt)...")
+            _model_cache['yolo_model1'] = YOLO(os.path.join(base_dir, "best.pt"))
+            print("  ✅ YOLO model1 loaded")
+            
+            print("  ⏳ Loading YOLO model2 (best2.pt)...")
+            _model_cache['yolo_model2'] = YOLO(os.path.join(base_dir, "best2.pt"))
+            print("  ✅ YOLO model2 loaded")
+            
+            print("  ⏳ Loading YOLO model3 (best3.pt)...")
+            _model_cache['yolo_model3'] = YOLO(os.path.join(base_dir, "best3.pt"))
+            print("  ✅ YOLO model3 loaded")
+        except Exception as e:
+            print(f"  ❌ Lỗi load YOLO models: {e}")
+        
+        _model_cache['vietocr_detector'] = None
+        
+        print("✅ Models đã được cache, sẵn sàng xử lý requests!")
+    
+    return _model_cache
+
+def get_vietocr_detector():
+    """Lazy load VietOCR detector - sẽ được load khi cần trong detect_lines()"""
+    global _model_cache
+    
+    if _model_cache['vietocr_detector'] is not None:
+        return _model_cache['vietocr_detector']
+    
+    with _model_cache['lock']:
+        if _model_cache['vietocr_detector'] is not None:
+            return _model_cache['vietocr_detector']
+        
+        print("  ⏳ Loading VietOCR detector...")
+        try:
+            from vietocr.tool.predictor import Predictor
+            from vietocr.tool.config import Cfg
+            
+            config = Cfg.load_config_from_name('vgg_transformer')
+            config['weights'] = os.path.join(_model_cache['base_dir'], 'vgg_transformer.pth')
+            config['cnn']['pretrained'] = False
+            config['device'] = 'cpu'
+            _model_cache['vietocr_detector'] = Predictor(config)
+            print("  ✅ VietOCR detector loaded")
+        except Exception as e:
+            print(f"  ❌ Lỗi load VietOCR: {e}")
+            raise
+    
+    return _model_cache['vietocr_detector']
+
+def ensure_vietocr_loaded():
+    """Đảm bảo VietOCR đã được load"""
+    get_vietocr_detector()
 
 # Cấu hình
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
@@ -102,9 +184,9 @@ def register_routes(app, prefix):
                     "message": "No file or data provided"
                 }), 400
             
-            # Xử lý
+            model_cache = get_model_cache()
             CCCDExtractorClass = get_cccd_extractor()
-            extractor = CCCDExtractorClass()
+            extractor = CCCDExtractorClass(cached_models=model_cache)
             task = {
                 "func_type": 1,
                 "inp_path": inp_data
@@ -167,14 +249,25 @@ def register_routes(app, prefix):
                     "message": "No file or data provided"
                 }), 400
             
+            model_cache = get_model_cache()
             CCCDExtractorClass = get_cccd_extractor()
-            extractor = CCCDExtractorClass()
+            extractor = CCCDExtractorClass(cached_models=model_cache)
+            
             task = {
                 "func_type": 2,
                 "inp_path": inp_data
             }
-            
             results = extractor.handle_task(task)
+            
+            if results.get("status") == "success" and results.get("zip_base64"):
+                zip_base64 = results.get("zip_base64")
+                zip_bytes = base64.b64decode(zip_base64)
+                task2 = {
+                    "func_type": 1,
+                    "inp_path": zip_bytes
+                }
+                results = extractor.handle_task(task2)
+            
             return jsonify(results)
             
         except Exception as e:
@@ -231,14 +324,25 @@ def register_routes(app, prefix):
                     "message": "No file or data provided"
                 }), 400
             
+            model_cache = get_model_cache()
             CCCDExtractorClass = get_cccd_extractor()
-            extractor = CCCDExtractorClass()
+            extractor = CCCDExtractorClass(cached_models=model_cache)
+            
             task = {
                 "func_type": 3,
                 "inp_path": inp_data
             }
-            
             results = extractor.handle_task(task)
+            
+            if results.get("status") == "success" and results.get("zip_base64"):
+                zip_base64 = results.get("zip_base64")
+                zip_bytes = base64.b64decode(zip_base64)
+                task2 = {
+                    "func_type": 1,
+                    "inp_path": zip_bytes
+                }
+                results = extractor.handle_task(task2)
+            
             return jsonify(results)
             
         except Exception as e:

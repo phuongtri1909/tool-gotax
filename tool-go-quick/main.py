@@ -16,6 +16,8 @@ import requests
 from requests import get
 import subprocess
 import sys
+import uuid
+import threading
 
 try:
         import vietocr
@@ -28,7 +30,7 @@ def count_files( folderPath):
 import shutil
 
 class DetectWorker():
-    def __init__(self,input_path:str = None,type_:int = 0):
+    def __init__(self,input_path:str = None,type_:int = 0, cached_models=None):
         super().__init__()
         self.path_img = input_path
         self.path_rs = None
@@ -36,41 +38,55 @@ class DetectWorker():
         # Lấy đường dẫn tuyệt đối của thư mục chứa main.py
         main_file_dir = os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.join(main_file_dir, "__pycache__")
+        # Cache models để tránh load lại mỗi lần
+        self.cached_models = cached_models
+        self.model1 = None
+        self.model2 = None
+        self.model3 = None
+        self.vietocr_detector = None
+        # Tạo unique session ID cho mỗi request để tránh conflict khi chạy đồng thời
+        self.session_id = str(uuid.uuid4())[:8]
+        self.work_dir = os.path.join(self.base_dir, f"work_{self.session_id}")
         
     def init_temp_dirs(self):
-        """Create temporary directories"""
-        os.makedirs(os.path.join(self.base_dir, "md1", "cropped_results"), exist_ok=True)
-        os.makedirs(os.path.join(self.base_dir, "md2", "detect_results"), exist_ok=True)
-        os.makedirs(os.path.join(self.base_dir, "md3", "detected_results", "crops"), exist_ok=True)
-        os.makedirs(os.path.join(self.base_dir, "md4"), exist_ok=True)
-        os.makedirs(os.path.join(self.base_dir, "temp_rs"), exist_ok=True)
+        """Create temporary directories với unique session ID"""
+        self.work_md1 = os.path.join(self.work_dir, "md1", "cropped_results")
+        self.work_md2 = os.path.join(self.work_dir, "md2", "detect_results")
+        self.work_md3 = os.path.join(self.work_dir, "md3", "detected_results", "crops")
+        self.work_md4 = os.path.join(self.work_dir, "md4")
+        self.work_temp_rs = os.path.join(self.work_dir, "temp_rs")
+        
+        os.makedirs(self.work_md1, exist_ok=True)
+        os.makedirs(self.work_md2, exist_ok=True)
+        os.makedirs(self.work_md3, exist_ok=True)
+        os.makedirs(self.work_md4, exist_ok=True)
+        os.makedirs(self.work_temp_rs, exist_ok=True)
     
     def cleanup_temp_dirs(self):
-        """Clean up temporary directories"""
-        temp_dirs = [
-            os.path.join(self.base_dir, "md1"),
-            os.path.join(self.base_dir, "md2"),
-            os.path.join(self.base_dir, "md3"),
-            os.path.join(self.base_dir, "md4", "ocr_results.txt")
-        ]
-        for dir_path in temp_dirs:
-            if os.path.exists(dir_path):
-                try:
-                    if os.path.isfile(dir_path):
-                        os.remove(dir_path)
-                    else:
-                        shutil.rmtree(dir_path)
-                except Exception as e:
-                    print(f"Lỗi xóa {dir_path}: {e}")
+        """Clean up temporary directories - chỉ xóa thư mục của session này"""
+        try:
+            if os.path.exists(self.work_dir):
+                shutil.rmtree(self.work_dir)
+        except Exception as e:
+            print(f"Lỗi xóa work_dir {self.work_dir}: {e}")
     
     def run(self):
         try:
             self.init_temp_dirs()
             
             if self.type_ == 1:
-                self.model1 = YOLO(os.path.join(self.base_dir, "best.pt"))
-                self.model2 = YOLO(os.path.join(self.base_dir, "best2.pt"))
-                self.model3 = YOLO(os.path.join(self.base_dir, "best3.pt"))
+                if self.cached_models:
+                    self.model1 = self.cached_models.get('yolo_model1')
+                    self.model2 = self.cached_models.get('yolo_model2')
+                    self.model3 = self.cached_models.get('yolo_model3')
+                    self.vietocr_detector = self.cached_models.get('vietocr_detector')
+                
+                if self.model1 is None:
+                    self.model1 = YOLO(os.path.join(self.base_dir, "best.pt"))
+                if self.model2 is None:
+                    self.model2 = YOLO(os.path.join(self.base_dir, "best2.pt"))
+                if self.model3 is None:
+                    self.model3 = YOLO(os.path.join(self.base_dir, "best3.pt"))
                 
                 self.detect_cccd()
                 self.detect_corners()
@@ -291,7 +307,7 @@ class DetectWorker():
                     print(f"Lỗi khi xóa {file_name}: {e}")
     def collect_cus_info(self):
         import os
-        folder_txt = f"{self.base_dir}\\temp_rs"
+        folder_txt = self.work_temp_rs
         all_files = [f for f in os.listdir(folder_txt) if f.endswith('.txt')]
         stt_set = set()
         for f in all_files:
@@ -388,8 +404,6 @@ class DetectWorker():
             rect[3] = pts[np.argmax(diff)]  # bottom-left
 
             return rect
-
-        os.makedirs(f"{self.base_dir}\\md1\\cropped_results", exist_ok=True)
         
         # Handle bytes input (zip or raw bytes with images)
         if isinstance(self.path_img, bytes) or (isinstance(self.path_img, str) and self.path_img.startswith('UEsDB')):  # base64 zip detection
@@ -443,7 +457,7 @@ class DetectWorker():
                             text_x = (w - text_size[0]) // 2
                             text_y = (h + text_size[1]) // 2
                             cv2.putText(image_bgr, text, (text_x, text_y), font, scale, (0, 0, 255), thickness)
-                            cv2.imwrite(f"{self.base_dir}\\md1\\cropped_results\\{file_name}.jpg", image_bgr)
+                            cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), image_bgr)
                             print(f"[!] {file_name} độ chính xác thấp ({avg_conf:.1f}%)")
                             continue
                         
@@ -472,8 +486,8 @@ class DetectWorker():
                         warped = cv2.warpPerspective(image_bgr, M, (maxWidth, maxHeight))
                         cv2.polylines(image_bgr, [ordered_pts.astype(np.int32)], isClosed=True, color=(0, 255, 0), thickness=2)
                         
-                        cv2.imwrite(f"{self.base_dir}\\md1\\cropped_results\\{file_name}.jpg", warped)
-                        cv2.imwrite(f"{self.base_dir}\\md1\\boxed_{file_name}.jpg", image_bgr)
+                        cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), warped)
+                        cv2.imwrite(os.path.join(self.work_dir, "md1", f"boxed_{file_name}.jpg"), image_bgr)
             except Exception as e:
                 print(f"Lỗi xử lý zip bytes: {e}")
                 return
@@ -516,7 +530,7 @@ class DetectWorker():
                     cv2.putText(image_bgr, text, (text_x, text_y), font, scale, (0, 0, 255), thickness)
 
                     # Lưu ảnh không đạt
-                    cv2.imwrite(f"{self.base_dir}\\md1\\cropped_results\\{file_name}.jpg", image_bgr)
+                    cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), image_bgr)
                     print(f"[!] {file_name} độ chính xác thấp ({avg_conf:.1f}%)")
                     continue
 
@@ -547,18 +561,15 @@ class DetectWorker():
                 warped = cv2.warpPerspective(image_bgr, M, (maxWidth, maxHeight))
                 cv2.polylines(image_bgr, [ordered_pts.astype(np.int32)], isClosed=True, color=(0, 255, 0), thickness=2)
 
-                cv2.imwrite(f"{self.base_dir}\\md1\\cropped_results\\{file_name}.jpg", warped)
-                cv2.imwrite(f"{self.base_dir}\\md1\\boxed_{file_name}.jpg", image_bgr)
+                cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), warped)
+                cv2.imwrite(os.path.join(self.work_dir, "md1", f"boxed_{file_name}.jpg"), image_bgr)
 
     def detect_lines(self):
         import cv2
         import numpy as np
         import os
         import math
-        os.makedirs(f"{self.base_dir}\\md3\\detected_results", exist_ok=True)
-        os.makedirs(f"{self.base_dir}\\md3\\detected_results\\crops", exist_ok=True)
-
-        folder = f"{self.base_dir}\\md2\\detect_results"
+        folder = self.work_md2
         img_files = [
             os.path.join(folder, f)
             for f in os.listdir(folder)
@@ -616,9 +627,9 @@ class DetectWorker():
                 crop = masked[y:y+h, x:x+w]
 
                 # === Tên file crop: tên gốc + tên label ===
-                crop_name = f"{self.base_dir}\\md3\\detected_results\\crops\\{file_name.replace('.jpg','')}-{class_name}.jpg"
+                crop_name = os.path.join(self.work_md3, f"{file_name.replace('.jpg','')}-{class_name}.jpg")
                 cv2.imwrite(crop_name, crop)
-            boxed_name = f"{self.base_dir}\\md3\\detected_results\\boxed_{file_name}"
+            boxed_name = os.path.join(self.work_dir, "md3", "detected_results", f"boxed_{file_name}")
             cv2.imwrite(boxed_name, image_bgr)
             print(f"[✓] {file_name} => Vẽ + crop {len(r.masks.xy)} polygon")
         import os
@@ -628,20 +639,25 @@ class DetectWorker():
         import cv2
         import numpy as np
 
-        # === 1️⃣ Config VietOCR ===
-        config = Cfg.load_config_from_name('vgg_transformer')
-        config['weights'] = os.path.join(self.base_dir, 'vgg_transformer.pth')
-        config['cnn']['pretrained'] = False
-        #config['device'] = 'cpu'
-        config['device'] = 'cpu'
-        detector = Predictor(config)
+        if self.vietocr_detector is not None:
+            detector = self.vietocr_detector
+        elif self.cached_models and self.cached_models.get('vietocr_detector'):
+            detector = self.cached_models['vietocr_detector']
+            self.vietocr_detector = detector
+        else:
+            config = Cfg.load_config_from_name('vgg_transformer')
+            config['weights'] = os.path.join(self.base_dir, 'vgg_transformer.pth')
+            config['cnn']['pretrained'] = False
+            config['device'] = 'cpu'
+            detector = Predictor(config)
+            if self.cached_models:
+                self.cached_models['vietocr_detector'] = detector
 
-        crop_folder = f'{self.base_dir}\\md3\\detected_results\\crops'
-        goc_folder = f'{self.base_dir}\\md2\\detect_results'
-        results_folder = f"{self.base_dir}\\temp_rs"
-        os.makedirs(results_folder, exist_ok=True)
+        crop_folder = self.work_md3
+        goc_folder = self.work_md2
+        results_folder = self.work_temp_rs
 
-        ocr_result_file = f'{self.base_dir}\\md4\\ocr_results.txt'
+        ocr_result_file = os.path.join(self.work_md4, 'ocr_results.txt')
         ocr_data = []
         step_ = 30/len(crop_folder)
         with open(ocr_result_file, 'w', encoding='utf-8') as f_out:
@@ -740,8 +756,7 @@ class DetectWorker():
         print("\n✅ DONE! Tất cả ảnh + txt đã lưu vào:", results_folder)
 
     def detect_corners(self):
-        os.makedirs(f"{self.base_dir}\\md2\\detect_results", exist_ok=True)
-        folder = f"{self.base_dir}\\md1\\cropped_results"
+        folder = self.work_md1
         img_files = [
             os.path.join(folder, f)
             for f in os.listdir(folder)
@@ -776,7 +791,7 @@ class DetectWorker():
                 print(f"🟢 chip - m-red | {file_name}")
             else:
                 print(f"❌ Thiếu điểm | {file_name}")
-                cv2.imwrite(f"{self.base_dir}\\md2\\detect_results\\{file_name}.jpg", img)  # Lưu nguyên gốc
+                cv2.imwrite(os.path.join(self.work_md2, f"{file_name}.jpg"), img)  # Lưu nguyên gốc
                 continue
 
             dx, dy = ptB[0] - ptA[0], ptB[1] - ptA[1]
@@ -784,7 +799,7 @@ class DetectWorker():
             rotate_angle = -angle   # CHUẨN: Luôn lấy -angle để vector nằm ngang
             print(f"Góc ban đầu: {angle:.2f}° => Xoay trước: {rotate_angle:.2f}°")
             if abs(rotate_angle) < 10:
-                cv2.imwrite(f"{self.base_dir}\\md2\\detect_results\\{file_name}.jpg", img)  # Lưu nguyên gốc
+                cv2.imwrite(os.path.join(self.work_md2, f"{file_name}.jpg"), img)  # Lưu nguyên gốc
                 continue
             h, w = img.shape[:2]
             center_img = (w // 2, h // 2)
@@ -826,16 +841,17 @@ class DetectWorker():
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(255, 255, 255)
             )
-            cv2.imwrite(f"{self.base_dir}\\md2\\detect_results\\{file_name}.jpg", rotated)
+            cv2.imwrite(os.path.join(self.work_md2, f"{file_name}.jpg"), rotated)
 
 class CCCDExtractor():
-    def __init__(self, config=None):
+    def __init__(self, config=None, cached_models=None):
         self.config = config or {}
+        self.cached_models = cached_models
         super().__init__()
     def handle_task(self,data_inp:dict):  
         func_type = data_inp.get("func_type")      
         inp_path = data_inp.get("inp_path")
-        results = DetectWorker(input_path = inp_path,type_ = func_type).run()
+        results = DetectWorker(input_path = inp_path, type_ = func_type, cached_models=self.cached_models).run()
         return results
 if __name__ == "__main__":
     import os

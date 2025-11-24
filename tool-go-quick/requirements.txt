@@ -1,0 +1,9 @@
+opencv-python>=4.12.0.88
+ultralytics==8.3.200
+numpy==2.0.2
+PyMuPDF==1.26.4
+Pillow==10.2.0
+pandas==2.3.3
+requests==2.32.5
+openpyxl==3.1.5
+vietocr==0.3.13

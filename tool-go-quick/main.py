@@ -629,7 +629,8 @@ class DetectWorker():
                 # === Tên file crop: tên gốc + tên label ===
                 crop_name = os.path.join(self.work_md3, f"{file_name.replace('.jpg','')}-{class_name}.jpg")
                 cv2.imwrite(crop_name, crop)
-            boxed_name = os.path.join(self.work_dir, "md3", "detected_results", f"boxed_{file_name}")
+            original_ext = os.path.splitext(os.path.basename(r.path))[1] or '.jpg'
+            boxed_name = os.path.join(self.work_dir, "md3", "detected_results", f"boxed_{file_name}{original_ext}")
             cv2.imwrite(boxed_name, image_bgr)
             print(f"[✓] {file_name} => Vẽ + crop {len(r.masks.xy)} polygon")
         import os

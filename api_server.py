@@ -1,52 +1,52 @@
 """
 API Server chung cho tất cả tools
-Tất cả tools sẽ được gọi qua: /api/go-quick/..., /api/go-bot/...
+Đã migrate sang Quart (async) để support Playwright + httpx
+
+Tất cả tools sẽ được gọi qua: /api/go-quick/..., /api/go-soft/...
+
+Run với:
+  python api_server.py  (dev mode)
+  hypercorn api_server:app --bind 0.0.0.0:5000  (production)
 """
-from flask import Flask, jsonify, request
-from flask_cors import CORS
 import os
 import sys
+import asyncio
+import signal
+
+# Quart = async Flask (API tương tự 99%)
+from quart import Quart, jsonify, request
+from quart_cors import cors
 
 # Thử load từ .env file (tùy chọn)
 try:
     from dotenv import load_dotenv
-    load_dotenv()  # Load từ file .env nếu có
+    load_dotenv()
     print("✅ Đã load .env file (nếu có)")
 except ImportError:
-    # Không có python-dotenv, bỏ qua
     pass
 
-app = Flask(__name__)
-CORS(app)  # Cho phép Laravel gọi API
+app = Quart(__name__)
+app = cors(app)  # Cho phép Laravel gọi API
 
 # Cấu hình
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 app.config['DEBUG'] = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-# 🔐 API Key Authentication (chỉ cần khi dùng domain/public)
-# Có thể set bằng nhiều cách:
-# 1. File .env: API_KEY=your-secret-key
-# 2. Export: export API_KEY=your-secret-key
-# 3. Systemd service: Environment="API_KEY=your-secret-key"
-# Nếu None = không bật API key (phù hợp cho local deployment)
+# 🔐 API Key Authentication
 API_KEY = os.environ.get('API_KEY', None)
 
+
 @app.before_request
-def check_api_key():
+async def check_api_key():
     """
     Kiểm tra API key nếu được bật
-    - Nếu API_KEY = None: Không kiểm tra (local deployment)
-    - Nếu API_KEY được set: Kiểm tra header X-API-Key
     """
-    # Bỏ qua nếu không set API_KEY (local deployment)
     if API_KEY is None:
         return None
     
-    # Bỏ qua health check
     if request.path == '/api/health':
         return None
     
-    # Kiểm tra API key trong header
     api_key = request.headers.get('X-API-Key')
     if api_key != API_KEY:
         return jsonify({
@@ -56,35 +56,35 @@ def check_api_key():
     
     return None
 
-# Danh sách tools (tự động load)
+
+# Danh sách tools
 TOOLS = {
     'go-quick': {
         'path': 'tool-go-quick',
         'module': 'tool_go_quick',
-        'name': 'ID Quick API'
+        'name': 'ID Quick API',
+        'async': False  # Flask-based, sync
     },
-    # Thêm tool mới ở đây:
-    # 'go-bot': {
-    #     'path': 'tool-go-bot',
-    #     'module': 'tool_go_bot',
-    #     'name': 'Go Bot API'
-    # },
+    'go-soft': {
+        'path': 'tool-go-soft',
+        'module': 'tool_go_soft',
+        'name': 'Tax Crawler API (Playwright + httpx)',
+        'async': True  # Quart-based, async
+    },
 }
+
 
 def register_tool_routes(tool_name, tool_config):
     """Đăng ký routes cho một tool"""
     try:
         tool_path = tool_config['path']
         
-        # Thêm tool path vào sys.path
         tool_abs_path = os.path.abspath(tool_path)
         if tool_abs_path not in sys.path:
             sys.path.insert(0, tool_abs_path)
         
-        # Thử import routes từ api/routes.py
         api_routes_path = os.path.join(tool_path, 'api', 'routes.py')
         if os.path.exists(api_routes_path):
-            # Import bằng cách load file trực tiếp
             import importlib.util
             spec = importlib.util.spec_from_file_location(
                 f"{tool_name}_routes",
@@ -96,7 +96,8 @@ def register_tool_routes(tool_name, tool_config):
                 
                 if hasattr(module, 'register_routes'):
                     module.register_routes(app, f'/api/{tool_name}')
-                    print(f"✅ Đã đăng ký routes cho tool: {tool_name}")
+                    async_tag = " (async)" if tool_config.get('async') else ""
+                    print(f"✅ Đã đăng ký routes cho tool: {tool_name}{async_tag}")
                     return True
                 else:
                     print(f"⚠️  Module {tool_name} không có function register_routes")
@@ -114,37 +115,44 @@ def register_tool_routes(tool_name, tool_config):
         traceback.print_exc()
         return False
 
+
 # Đăng ký routes cho tất cả tools
-print("🚀 Đang khởi tạo API Server...")
+print("🚀 Đang khởi tạo API Server (Async mode)...")
+print("📦 Tech stack: Quart + Playwright + httpx")
 for tool_name, tool_config in TOOLS.items():
     register_tool_routes(tool_name, tool_config)
 
+
 @app.route('/api/health', methods=['GET'])
-def api_health_check():
+async def api_health_check():
     """Health check cho toàn bộ API server"""
     tools_status = {}
     for tool_name, tool_config in TOOLS.items():
         tools_status[tool_name] = {
             'name': tool_config['name'],
-            'status': 'registered'
+            'status': 'registered',
+            'async': tool_config.get('async', False)
         }
     
     return jsonify({
         "status": "success",
-        "message": "API Server is running",
+        "message": "API Server is running (Async mode)",
         "tools": tools_status,
-        "version": "1.0"
+        "version": "2.0",
+        "engine": "Quart + Playwright + httpx"
     })
 
+
 @app.errorhandler(404)
-def not_found(error):
+async def not_found(error):
     return jsonify({
         "status": "error",
         "message": "Endpoint not found"
     }), 404
 
+
 @app.errorhandler(500)
-def internal_error(error):
+async def internal_error(error):
     import traceback
     return jsonify({
         "status": "error",
@@ -152,13 +160,60 @@ def internal_error(error):
         "detail": traceback.format_exc() if app.config['DEBUG'] else None
     }), 500
 
+
+# Graceful shutdown
+async def shutdown():
+    """Cleanup khi shutdown"""
+    print("\n🛑 Đang shutdown...")
+    try:
+        # Cleanup tool-go-soft sessions
+        from importlib import import_module
+        go_soft_path = os.path.abspath('tool-go-soft')
+        if go_soft_path not in sys.path:
+            sys.path.insert(0, go_soft_path)
+        
+        from services.session_manager import session_manager
+        await session_manager.shutdown()
+    except Exception as e:
+        print(f"⚠️  Lỗi khi cleanup: {e}")
+    
+    print("✅ Shutdown hoàn tất")
+
+
+@app.before_serving
+async def startup():
+    """Khởi tạo khi server start"""
+    print("🎯 Server đã sẵn sàng nhận requests")
+    
+    # Cài đặt Playwright browsers nếu chưa có
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            # Test browser launch
+            browser = await p.chromium.launch(headless=True)
+            await browser.close()
+        print("✅ Playwright browsers đã sẵn sàng")
+    except Exception as e:
+        print(f"⚠️  Playwright chưa được cài đặt. Chạy: playwright install chromium")
+
+
+@app.after_serving
+async def after_shutdown():
+    """Cleanup sau khi server shutdown"""
+    await shutdown()
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('DEBUG', 'False').lower() == 'true'
-    host = os.environ.get('HOST', '127.0.0.1')  # Mặc định localhost
+    host = os.environ.get('HOST', '127.0.0.1')
     
-    print(f"🌐 API Server đang chạy tại: http://{host}:{port}")
+    print(f"\n🌐 API Server đang chạy tại: http://{host}:{port}")
     print(f"📋 Các tools đã đăng ký: {', '.join(TOOLS.keys())}")
+    print(f"🔧 Debug mode: {debug}")
+    print("\n📖 Để chạy production, dùng:")
+    print(f"   hypercorn api_server:app --bind {host}:{port}")
+    print("")
     
+    # Chạy với Quart dev server
     app.run(host=host, port=port, debug=debug)
-

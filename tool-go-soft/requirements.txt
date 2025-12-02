@@ -1,0 +1,22 @@
+# Requirements for tool-go-soft (Tax Crawler API)
+# Đã migrate từ Selenium sang Playwright + httpx để tối ưu tốc độ
+
+# Async Web Framework (thay Flask)
+quart>=0.19.0
+hypercorn>=0.15.0
+
+# Browser Automation (thay Selenium)
+playwright>=1.40.0
+
+# Async HTTP Client (crawl nhanh sau khi login)
+httpx>=0.25.0
+
+# Data Processing
+openpyxl>=3.0.0
+beautifulsoup4>=4.9.0
+lxml>=4.9.0
+
+# Utils
+unidecode>=1.3.0
+
+# Note: Sau khi cài đặt, chạy: playwright install chromium

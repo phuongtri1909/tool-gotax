@@ -38,6 +38,35 @@ def get_tax_crawler():
     return _tax_crawler
 
 
+def check_session_exists(session_id: str) -> tuple[bool, dict]:
+    """
+    Kiểm tra session có tồn tại không
+    
+    Returns:
+        (exists, error_response): 
+        - exists: True nếu session tồn tại, False nếu không
+        - error_response: Dict error response nếu session không tồn tại, None nếu tồn tại
+    """
+    if not session_id:
+        return False, {
+            "status": "error",
+            "error_code": "MISSING_SESSION_ID",
+            "message": "Missing session_id"
+        }
+    
+    sm = get_session_manager()
+    session = sm.get_session(session_id)
+    
+    if not session:
+        return False, {
+            "status": "error",
+            "error_code": "SESSION_NOT_FOUND",
+            "message": "Session not found or expired"
+        }
+    
+    return True, None
+
+
 def register_routes(app, prefix):
     """
     Đăng ký routes cho tool này
@@ -349,6 +378,11 @@ def register_routes(app, prefix):
             if not tokhai_type or tokhai_type.strip() == "":
                 tokhai_type = "00"
             
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
             tc = get_tax_crawler()
             
             async def generate():
@@ -404,6 +438,11 @@ def register_routes(app, prefix):
             # Nếu không có tokhai_type hoặc rỗng → mặc định là "Tất cả"
             if not tokhai_type or tokhai_type.strip() == "":
                 tokhai_type = "00"
+            
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
             
             tc = get_tax_crawler()
             
@@ -497,6 +536,11 @@ def register_routes(app, prefix):
             if not tokhai_type or tokhai_type.strip() == "":
                 tokhai_type = "00"
             
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
             tc = get_tax_crawler()
             
             results = []
@@ -557,6 +601,11 @@ def register_routes(app, prefix):
                     "message": "Missing required fields"
                 }), 400
             
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
             tc = get_tax_crawler()
             
             async def generate():
@@ -595,6 +644,11 @@ def register_routes(app, prefix):
                     "error_code": "MISSING_REQUIRED_FIELDS",
                     "message": "Missing required fields"
                 }), 400
+            
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
             
             tc = get_tax_crawler()
             
@@ -654,6 +708,11 @@ def register_routes(app, prefix):
                     "message": "Missing required fields"
                 }), 400
             
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
             tc = get_tax_crawler()
             
             async def generate():
@@ -692,6 +751,11 @@ def register_routes(app, prefix):
                     "error_code": "MISSING_REQUIRED_FIELDS",
                     "message": "Missing required fields"
                 }), 400
+            
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
             
             tc = get_tax_crawler()
             
@@ -885,138 +949,63 @@ def register_routes(app, prefix):
     @app.route(f'{prefix}/crawl/batch', methods=['POST'])
     async def batch_crawl():
         """
-        Crawl nhiều loại dữ liệu song song (2+ types)
-        
-        ⚠️ Lưu ý: API này chỉ nên dùng khi cần crawl từ 2 loại trở lên.
-        Nếu chỉ cần 1 loại, dùng API riêng sẽ đơn giản hơn:
-        - 1 loại tờ khai → /crawl/tokhai hoặc /crawl/tokhai/sync
-        - 1 loại thông báo → /crawl/thongbao hoặc /crawl/thongbao/sync
-        - 1 loại giấy nộp → /crawl/giaynoptien hoặc /crawl/giaynoptien/sync
+        Crawl nhiều loại dữ liệu đồng thời (streaming response)
         
         Body: {
             "session_id": "...",
             "start_date": "01/01/2023",
             "end_date": "31/12/2023",
-            "crawl_types": ["tokhai", "thongbao", "giaynoptien"],  // Phải có ít nhất 2 types
-            "tokhai_type": "01/GTGT",  // nếu crawl tokhai
-            "download_files": true  // Optional: true để download file (trả về zip_base64), false chỉ lấy thông tin
+            "crawl_types": ["tokhai", "thongbao", "giaynoptien"],
+            "tokhai_type": "01/GTGT" hoặc "00" (Tất cả) hoặc null
         }
-        
-        Ưu điểm: Chạy song song nên nhanh hơn rất nhiều khi crawl nhiều loại
+        Returns: Server-Sent Events stream
         """
         try:
-            from quart import request
-            import asyncio
-            
+            from quart import request, Response
             data = await request.get_json()
             session_id = data.get("session_id")
+            tokhai_type = data.get("tokhai_type", "00")  # Mặc định "Tất cả"
             start_date = data.get("start_date")
             end_date = data.get("end_date")
             crawl_types = data.get("crawl_types", [])
-            tokhai_type = data.get("tokhai_type")
-            download_files = data.get("download_files", False)  # Mặc định false để chỉ lấy thông tin
             
             if not all([session_id, start_date, end_date, crawl_types]):
                 return jsonify({
                     "status": "error",
                     "error_code": "MISSING_REQUIRED_FIELDS",
-                    "message": "Missing required fields"
+                    "message": "Missing required fields: session_id, start_date, end_date, crawl_types"
                 }), 400
             
-            # Validate: Phải có ít nhất 2 types
-            if not isinstance(crawl_types, list) or len(crawl_types) < 2:
+            # Validate crawl_types
+            valid_types = ["tokhai", "thongbao", "giaynoptien"]
+            crawl_types = [t for t in crawl_types if t in valid_types]
+            
+            if not crawl_types:
                 return jsonify({
                     "status": "error",
-                    "error_code": "INVALID_BATCH_REQUEST",
-                    "message": "Batch API requires at least 2 crawl_types. For single type, use the specific API instead (e.g., /crawl/tokhai, /crawl/thongbao, /crawl/giaynoptien)"
+                    "error_code": "INVALID_CRAWL_TYPES",
+                    "message": "Không có loại crawl hợp lệ. Chọn từ: tokhai, thongbao, giaynoptien"
                 }), 400
             
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
             tc = get_tax_crawler()
-            results = {}
             
-            async def crawl_type(ctype):
-                items = []
-                zip_base64 = None
-                zip_filename = None
-                files_count = 0
-                total_size = 0
-                files = []
-                
-                if ctype == "tokhai" and tokhai_type:
-                    async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date):
-                        if event["type"] == "item":
-                            items.append(event["data"])
-                        elif event["type"] == "complete":
-                            return {
-                                "type": ctype,
-                                "total": event.get("total", 0),
-                                "results": items,
-                                "zip_base64": event.get("zip_base64") if download_files else None,
-                                "zip_filename": event.get("zip_filename") if download_files else None,
-                                "files_count": event.get("files_count", 0) if download_files else 0,
-                                "total_size": event.get("total_size", 0) if download_files else 0,
-                                "files": event.get("files", []) if download_files else []
-                            }
-                elif ctype == "thongbao":
-                    async for event in tc.crawl_thongbao(session_id, start_date, end_date):
-                        if event["type"] == "complete":
-                            return {
-                                "type": ctype,
-                                "total": event.get("total", 0),
-                                "results": event.get("results", []),
-                                "zip_base64": event.get("zip_base64") if download_files else None,
-                                "zip_filename": event.get("zip_filename") if download_files else None,
-                                "files_count": event.get("files_count", 0) if download_files else 0,
-                                "total_size": event.get("total_size", 0) if download_files else 0,
-                                "files": event.get("files", []) if download_files else []
-                            }
-                elif ctype == "giaynoptien":
-                    async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date):
-                        if event["type"] == "complete":
-                            return {
-                                "type": ctype,
-                                "total": event.get("total", 0),
-                                "results": event.get("results", []),
-                                "zip_base64": event.get("zip_base64") if download_files else None,
-                                "zip_filename": event.get("zip_filename") if download_files else None,
-                                "files_count": event.get("files_count", 0) if download_files else 0,
-                                "total_size": event.get("total_size", 0) if download_files else 0,
-                                "files": event.get("files", []) if download_files else []
-                            }
-                return {
-                    "type": ctype,
-                    "total": 0,
-                    "results": [],
-                    "zip_base64": None,
-                    "zip_filename": None,
-                    "files_count": 0,
-                    "total_size": 0,
-                    "files": []
+            async def generate():
+                async for event in tc.crawl_batch(session_id, start_date, end_date, crawl_types, tokhai_type):
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            
+            return Response(
+                generate(),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no'
                 }
-            
-            # Chạy song song tất cả crawl types
-            tasks = [crawl_type(ct) for ct in crawl_types]
-            crawl_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for result in crawl_results:
-                if isinstance(result, Exception):
-                    continue
-                results[result["type"]] = {
-                    "total": result["total"],
-                    "results": result["results"]
-                }
-                # Thêm thông tin download nếu có
-                if download_files:
-                    results[result["type"]]["zip_base64"] = result.get("zip_base64")
-                    results[result["type"]]["zip_filename"] = result.get("zip_filename")
-                    results[result["type"]]["files_count"] = result.get("files_count", 0)
-                    results[result["type"]]["total_size"] = result.get("total_size", 0)
-                    results[result["type"]]["files"] = result.get("files", [])
-            
-            return jsonify({
-                "status": "success",
-                "data": results
-            })
+            )
             
         except Exception as e:
             logger.error(f"Error in batch_crawl: {e}")

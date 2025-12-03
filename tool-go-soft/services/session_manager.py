@@ -193,7 +193,7 @@ class SessionManager:
     
     async def init_login_page(self, session_id: str) -> Dict[str, Any]:
         """
-        Lấy captcha: Navigate đến trang login (để có cookies) rồi fetch ImageServlet với timestamp
+        Lấy captcha: Navigate đến trang login dịch vụ công và fetch captcha
         Returns: {success, captcha_base64, error}
         """
         session = self.get_session(session_id)
@@ -203,77 +203,18 @@ class SessionManager:
         page = session.page
         
         try:
-            # Check xem đã ở trang login chưa (có cookies chưa)
-            is_login_page = False
-            try:
-                if await page.locator('input#_userName, input[name="_userName"]').count() > 0:
-                    is_login_page = True
-                    logger.info("Login page already loaded, using existing cookies")
-            except:
-                pass
+            # Navigate đến trang login dịch vụ công (chỉ để có cookies)
+            current_url = page.url
+            if '/tthc/login' not in current_url:
+                logger.info("Navigating to dichvucong login page...")
+                await page.goto('https://dichvucong.gdt.gov.vn/tthc/login', wait_until='domcontentloaded', timeout=30000)
+                await asyncio.sleep(1)  # Đợi page load xong để có cookies
             
-            # Nếu chưa có trang login, navigate đến để có cookies
-            if not is_login_page:
-                # Navigate to main page
-                await page.goto('https://thuedientu.gdt.gov.vn/', wait_until='domcontentloaded')
-                
-                # Click vào "DOANH NGHIỆP"
-                retry_count = 0
-                while retry_count < 3:
-                    try:
-                        dn_btn = page.locator('a:has(span:text("DOANH NGHIỆP"))')
-                        await dn_btn.wait_for(timeout=5000, state='visible')
-                        await dn_btn.click()
-                        break
-                    except:
-                        await page.goto('https://thuedientu.gdt.gov.vn/', wait_until='domcontentloaded')
-                        retry_count += 1
-                        await asyncio.sleep(0.3)
-                
-                if retry_count >= 3:
-                    return {"success": False, "error": "Cannot load login page"}
-                
-                # Handle alert nếu có
-                async def handle_dialog(dialog):
-                    try:
-                        await dialog.accept()
-                    except:
-                        pass
-                
-                page.on("dialog", lambda dialog: asyncio.create_task(handle_dialog(dialog)))
-                await asyncio.sleep(0.3)
-                
-                # Click login button
-                login_div = page.locator('div.dangnhap')
-                spans = login_div.locator('span')
-                if await spans.count() >= 2:
-                    await spans.nth(1).click()
-                
-                await asyncio.sleep(0.3)
-                
-                # Đóng popup thư ngõ nếu có
-                try:
-                    await page.evaluate("popupThungo();")
-                except:
-                    pass
-                
-                # Click đăng nhập bằng tài khoản thuế điện tử
-                try:
-                    element = page.locator("text='Đăng nhập bằng tài khoản Thuế điện tử'")
-                    await element.click(timeout=5000)
-                except:
-                    pass
-                
-                # Đợi form login xuất hiện
-                try:
-                    await page.wait_for_selector('input#_userName, input[name="_userName"]', timeout=5000, state='visible')
-                except:
-                    pass
-            
-            # Bây giờ đã có cookies từ trang login, fetch ImageServlet với timestamp
+            # Lấy captcha từ /tthc/homelogin/getCaptcha với timestamp
+            # KHÔNG CẦN đợi form login xuất hiện, chỉ cần có cookies từ trang login
             import time
             timenow = int(time.time() * 1000)  # milliseconds
-            captcha_url = f"https://thuedientu.gdt.gov.vn/etaxnnt/servlet/ImageServlet?d={timenow}"
+            captcha_url = f"https://dichvucong.gdt.gov.vn/tthc/homelogin/getCaptcha?{timenow}"
             
             # Fetch image với cookies từ browser context (QUAN TRỌNG: cần cookies)
             response = await page.request.get(captcha_url)
@@ -348,8 +289,8 @@ class SessionManager:
     
     async def submit_login(self, session_id: str, username: str, password: str, captcha: str) -> Dict[str, Any]:
         """
-        Submit login với username, password và captcha
-        Returns: {success, error, cookies}
+        Submit login với username, password và captcha (trang dichvucong)
+        Returns: {success, error, cookies, dse_session_id}
         """
         session = self.get_session(session_id)
         if not session:
@@ -358,100 +299,251 @@ class SessionManager:
         page = session.page
         
         try:
-            # Nhập username (theo frm_login.html: input#_userName hoặc input[name="_userName"])
-            user_input = page.locator('input#_userName, input[name="_userName"]').first
-            await user_input.wait_for(timeout=5000)
-            await user_input.fill(username)
-            
-            # Nhập password (theo frm_login.html: input#password hoặc input[name="_password"])
-            pass_input = page.locator('input#password, input[name="_password"], input[type="password"]').first
-            await pass_input.wait_for(timeout=5000)
-            await pass_input.fill(password)
-            
-            # Nhập captcha (theo frm_login.html: input#vcode hoặc input[name="_verifyCode"])
-            captcha_input = page.locator('input#vcode, input[name="_verifyCode"]').first
-            await captcha_input.wait_for(timeout=5000)
-            await captcha_input.fill(captcha)
-            
-            await asyncio.sleep(0.3)
-            
-            # Intercept network để lấy dse_sessionId
-            dse_session_id = None
-            
-            async def capture_session_id(request):
-                nonlocal dse_session_id
-                url = request.url
-                match = re.search(r"dse_sessionId=([^&]+)", url)
-                if match:
-                    dse_session_id = match.group(1)
-            
-            page.on("request", capture_session_id)
-            
-            # Click login button
-            login_btn = page.locator('input#dangnhap, input[type="button"][value="Đăng nhập"], input[type="submit"]').first
-            await login_btn.click()
-            
-            # Wait for navigation hoặc error message
-            try:
-                await page.wait_for_load_state('networkidle', timeout=10000)
-            except:
-                pass  # Có thể không navigate nếu sai thông tin
-            
-            await asyncio.sleep(1.5)
-            
-            # Kiểm tra lỗi từ HTML (giống frm_login.html)
-            # Tìm <span style="color: #fcdf00; font-size: 12px;"> trong <tr>
-            error_text = None
-            try:
-                # Tìm span có style color: #fcdf00 (màu vàng - màu lỗi)
-                error_span = page.locator('span[style*="color: #fcdf00"], span[style*="color:#fcdf00"]')
-                if await error_span.count() > 0:
-                    error_text = await error_span.first.text_content()
-                    error_text = error_text.strip() if error_text else None
-                    logger.warning(f"Login error detected: {error_text}")
-            except Exception as e:
-                logger.debug(f"Error checking error message: {e}")
-            
-            # Kiểm tra login thành công
+            # Đảm bảo đang ở trang login
             current_url = page.url
-            if error_text or ('login' in current_url.lower() or 'dang-nhap' in current_url.lower()):
-                # Còn ở trang login hoặc có thông báo lỗi -> sai thông tin
-                if not error_text:
-                    # Thử tìm error message khác
-                    try:
-                        error_elem = page.locator('.error, .alert-danger, span[style*="color"]')
-                        if await error_elem.count() > 0:
-                            error_text = await error_elem.first.text_content()
-                    except:
-                        pass
+            if '/tthc/login' not in current_url:
+                await page.goto('https://dichvucong.gdt.gov.vn/tthc/login', wait_until='domcontentloaded', timeout=30000)
+                await asyncio.sleep(1)
+            
+            # Đợi page load xong
+            try:
+                await page.wait_for_load_state('domcontentloaded', timeout=10000)
+            except:
+                pass
+            
+            logger.info(f"Attempting login for user: {username}")
+            
+            # ===== LẤY JSESSIONID TRƯỚC KHI LOGIN =====
+            jsessionid_before = None
+            try:
+                cookies = await session.context.cookies()
+                for cookie in cookies:
+                    if cookie.get('name') == 'JSESSIONID':
+                        jsessionid_before = cookie.get('value')
+                        logger.info(f"JSESSIONID BEFORE login: {jsessionid_before}")
+                        break
+                if not jsessionid_before:
+                    logger.info("JSESSIONID BEFORE login: None (no session cookie found)")
+            except Exception as e:
+                logger.warning(f"Error getting JSESSIONID before login: {e}")
+            
+            # QUAN TRỌNG: Gọi AJAX bằng JS thay vì Python để đảm bảo encoding giống hệt
+            # Vì JS có btoa(unescape(encodeURIComponent())) - khó replicate chính xác trong Python
+            
+            # Gọi AJAX trực tiếp bằng page.evaluate để lấy response
+            # QUAN TRỌNG: Để JS tự encode password để đảm bảo 100% giống code gốc
+            try:
+                ajax_response = await page.evaluate("""
+                    async (credentials) => {
+                        const base_url = "/tthc/";
+                        const tenDN = credentials.username;
+                        const matKhau = credentials.password;
+                        const doiTuong = 'DN';
+                        
+                        // Encode password CHÍNH XÁC như JS gốc
+                        const matKhauEncoded = btoa(unescape(encodeURIComponent(matKhau)));
+                        
+                        return new Promise((resolve) => {
+                            $.ajax({
+                                type: 'POST',
+                                url: base_url + 'loginLDAP',
+                                data: {
+                                    tenDN: tenDN,
+                                    matKhau: matKhauEncoded,
+                                    doiTuong: doiTuong
+                                },
+                                success: function (data) {
+                                    resolve({
+                                        success: true,
+                                        data: data
+                                    });
+                                },
+                                error: function (xhr, error) {
+                                    resolve({
+                                        success: false,
+                                        error: error,
+                                        status: xhr.status,
+                                        responseText: xhr.responseText
+                                    });
+                                }
+                            });
+                        });
+                    }
+                """, {
+                    'username': username,
+                    'password': password  # Truyền password gốc, để JS tự encode
+                })
                 
+                logger.info(f"AJAX response: {ajax_response}")
+                
+                # Check AJAX có thành công không
+                if not ajax_response.get('success'):
+                    error_msg = ajax_response.get('error', 'Unknown error')
+                    logger.error(f"AJAX call failed: {error_msg}")
+                    return {
+                        "success": False,
+                        "error": f"AJAX request failed: {error_msg}"
+                    }
+                
+                # Parse response data
+                response_data = ajax_response.get('data', {})
+                response_status = response_data.get('status')
+                
+                logger.info(f"Response status: {response_status}")
+                logger.info(f"Response data: {response_data}")
+                
+                # Xử lý theo response status
+                if response_status == '200':
+                    # Login thành công → redirect đến /tthc/home
+                    logger.info("Login successful (status 200) - navigating to /tthc/home")
+                    
+                    # Đợi 1 giây để cookies được set
+                    await asyncio.sleep(1)
+                    
+                    # Navigate đến trang home
+                    try:
+                        await page.goto('https://dichvucong.gdt.gov.vn/tthc/home', 
+                                      wait_until='domcontentloaded', 
+                                      timeout=30000)
+                        logger.info("Successfully navigated to /tthc/home")
+                    except Exception as e:
+                        logger.warning(f"Error navigating to home: {e}, but login was successful")
+                    
+                    # Lưu cookies
+                    cookies = await session.context.cookies()
+                    session.cookies = {c['name']: c['value'] for c in cookies}
+                    
+                    # ===== LẤY JSESSIONID SAU KHI LOGIN =====
+                    jsessionid_after = None
+                    try:
+                        for cookie in cookies:
+                            if cookie.get('name') == 'JSESSIONID':
+                                jsessionid_after = cookie.get('value')
+                                logger.info(f"JSESSIONID AFTER login: {jsessionid_after}")
+                                break
+                        if not jsessionid_after:
+                            logger.info("JSESSIONID AFTER login: None (no session cookie found)")
+                    except Exception as e:
+                        logger.warning(f"Error getting JSESSIONID after login: {e}")
+                    
+                    # So sánh JSESSIONID trước và sau
+                    if jsessionid_before and jsessionid_after:
+                        if jsessionid_before == jsessionid_after:
+                            logger.info("JSESSIONID unchanged - same session maintained")
+                        else:
+                            logger.warning(f"JSESSIONID changed: {jsessionid_before[:30]}... → {jsessionid_after[:30]}...")
+                            logger.warning("JSESSIONID changed indicates logout/session expired - login failed")
+                            return {
+                                "success": False,
+                                "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                                "error_code": "SESSION_EXPIRED"
+                            }
+                    elif jsessionid_after:
+                        logger.info("JSESSIONID created after login (new session)")
+                    elif jsessionid_before:
+                        logger.warning("JSESSIONID lost after login (session expired?)")
+                        return {
+                            "success": False,
+                            "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                            "error_code": "SESSION_EXPIRED"
+                        }
+                    
+                    # Cập nhật session data
+                    session.username = username
+                    session.is_logged_in = True
+                    session.dse_session_id = None
+                    
+                    return {
+                        "success": True,
+                        "dse_session_id": None,
+                        "cookies": session.cookies
+                    }
+                    
+                elif response_status == '201':
+                    # Cần thêm bước (chọn MST)
+                    logger.info(f"Login requires additional step (status 201): {response_data.get('value')}")
+                    
+                    # Navigate đến URL được chỉ định
+                    redirect_url = response_data.get('value', '')
+                    if redirect_url:
+                        full_url = f"https://dichvucong.gdt.gov.vn/tthc/{redirect_url}"
+                        try:
+                            await page.goto(full_url, wait_until='domcontentloaded', timeout=30000)
+                            logger.info(f"Navigated to: {full_url}")
+                        except Exception as e:
+                            logger.warning(f"Error navigating to {full_url}: {e}")
+                    
+                    # Lưu cookies
+                    cookies = await session.context.cookies()
+                    session.cookies = {c['name']: c['value'] for c in cookies}
+                    
+                    # ===== LẤY JSESSIONID SAU KHI LOGIN (status 201) =====
+                    jsessionid_after = None
+                    try:
+                        for cookie in cookies:
+                            if cookie.get('name') == 'JSESSIONID':
+                                jsessionid_after = cookie.get('value')
+                                logger.info(f"JSESSIONID AFTER login (status 201): {jsessionid_after}")
+                                break
+                        if not jsessionid_after:
+                            logger.info("JSESSIONID AFTER login (status 201): None (no session cookie found)")
+                    except Exception as e:
+                        logger.warning(f"Error getting JSESSIONID after login (status 201): {e}")
+                    
+                    # So sánh JSESSIONID trước và sau
+                    if jsessionid_before and jsessionid_after:
+                        if jsessionid_before == jsessionid_after:
+                            logger.info("JSESSIONID unchanged - same session maintained (status 201)")
+                        else:
+                            logger.warning(f"JSESSIONID changed (status 201): {jsessionid_before[:30]}... → {jsessionid_after[:30]}...")
+                            logger.warning("JSESSIONID changed indicates logout/session expired - login failed")
+                            return {
+                                "success": False,
+                                "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                                "error_code": "SESSION_EXPIRED"
+                            }
+                    elif jsessionid_after:
+                        logger.info("JSESSIONID created after login (new session, status 201)")
+                    elif jsessionid_before:
+                        logger.warning("JSESSIONID lost after login (session expired?, status 201)")
+                        return {
+                            "success": False,
+                            "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                            "error_code": "SESSION_EXPIRED"
+                        }
+                    
+                    session.username = username
+                    session.is_logged_in = True
+                    
+                    return {
+                        "success": True,
+                        "requires_mst_selection": True,
+                        "redirect_url": redirect_url,
+                        "dse_session_id": None,
+                        "cookies": session.cookies
+                    }
+                    
+                else:
+                    # Login failed
+                    error_desc = response_data.get('desc', 'Đăng nhập thất bại')
+                    logger.warning(f"Login failed: {error_desc}")
+                    
+                    return {
+                        "success": False,
+                        "error": error_desc
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Error during AJAX call: {e}")
                 return {
-                    "success": False, 
-                    "error": error_text or "Sai tài khoản, mật khẩu hoặc captcha",
-                    "dse_session_id": None
+                    "success": False,
+                    "error": f"Error during login: {str(e)}"
                 }
-            
-            # Lưu cookies để dùng với httpx
-            cookies = await session.context.cookies()
-            session.cookies = {c['name']: c['value'] for c in cookies}
-            
-            # Cập nhật session data
-            session.username = username
-            session.is_logged_in = True
-            session.dse_session_id = dse_session_id
-            
-            logger.info(f"Login successful for session {session_id}, user: {username}")
-            
-            return {
-                "success": True, 
-                "dse_session_id": dse_session_id,
-                "cookies": session.cookies
-            }
             
         except Exception as e:
             logger.error(f"Error in submit_login: {e}")
             return {"success": False, "error": str(e)}
-    
+  
     async def get_cookies_for_httpx(self, session_id: str) -> Optional[Dict[str, str]]:
         """
         Lấy cookies để dùng với httpx client

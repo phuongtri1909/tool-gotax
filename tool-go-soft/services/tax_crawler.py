@@ -20,8 +20,12 @@ from io import BytesIO
 import zipfile
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+import warnings
 from openpyxl import Workbook
+
+# Suppress XMLParsedAsHTMLWarning khi parse XML với html.parser
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from openpyxl.styles import Font, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.styles.numbers import FORMAT_NUMBER_COMMA_SEPARATED1
@@ -100,6 +104,42 @@ class TaxCrawlerService:
             await self._http_clients[session_id].aclose()
             del self._http_clients[session_id]
     
+    async def _check_session_timeout(self, page) -> bool:
+        """
+        Kiểm tra xem session có bị timeout không
+        
+        Returns:
+            True nếu session timeout, False nếu không
+        """
+        try:
+            current_url = page.url
+            
+            # Check URL timeout
+            if 'timeout.jsp' in current_url:
+                logger.warning("Session timeout detected from URL")
+                return True
+            
+            # Check content timeout
+            try:
+                # Tìm text "Phiên giao dịch hết hạn"
+                timeout_text = page.locator('text=Phiên giao dịch hết hạn')
+                if await timeout_text.count() > 0:
+                    logger.warning("Session timeout detected from content")
+                    return True
+                
+                # Tìm nút "Trở lại" với onclick chứa corpIndexProc
+                back_button = page.locator('input[type="button"][onclick*="corpIndexProc"]')
+                if await back_button.count() > 0:
+                    logger.warning("Session timeout detected from back button")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error checking timeout content: {e}")
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error in _check_session_timeout: {e}")
+            return False
+    
     def _get_date_ranges(self, start_date: str, end_date: str, days_interval: int = 350) -> List[List[str]]:
         """
         Chia khoảng thời gian thành các đoạn nhỏ
@@ -154,34 +194,329 @@ class TaxCrawlerService:
         
         return name_tk
     
-    async def _navigate_to_tokhai_search(self, session: SessionData) -> bool:
+    async def _navigate_to_tokhai_page(self, page, dse_session_id: str) -> bool:
         """
-        Navigate đến trang tra cứu tờ khai (giống flow Selenium cũ)
+        Navigate đến trang tra cứu tờ khai qua dichvucong.gdt.gov.vn
+        
+        Flow:
+        1. Navigate đến /tthc/dich-vu-khac
+        2. Click vào link có onclick="connectSSO('360103', '', '', '')"
+        3. Đợi iframe load với src từ thuedientu.gdt.gov.vn
+        4. Switch vào iframe và đợi #maTKhai xuất hiện
+        
         Returns: True nếu thành công
         """
-        page = session.page
+        success = False
+        frame = None
         
         try:
-            # Đảm bảo đang ở default content
-            await page.goto(f'{BASE_URL}/etaxnnt/Request?dse_sessionId={session.dse_session_id}&dse_applicationId=-1', wait_until='networkidle')
-            await asyncio.sleep(1)
+            # Bước 1: Navigate đến trang dich-vu-khac
+            current_url = page.url
+            if '/tthc/dich-vu-khac' not in current_url:
+                logger.info("Navigating to /tthc/dich-vu-khac...")
+                await page.goto('https://dichvucong.gdt.gov.vn/tthc/dich-vu-khac', wait_until='domcontentloaded', timeout=30000)
+                await asyncio.sleep(2)
+            else:
+                logger.info("Already on /tthc/dich-vu-khac page")
             
-            # Click vào menu "Kế toán thuế" (li thứ 3 trong menu)
-            menu_items = page.locator('div.div-menu ul li')
-            if await menu_items.count() >= 3:
-                await menu_items.nth(2).click()  # Index 2 = li thứ 3
+            # Bước 2: Gọi trực tiếp hàm JavaScript connectSSO('360103', '', '', '')
+            logger.info("Calling connectSSO('360103', '', '', '') via JavaScript...")
+            
+            try:
+                # Gọi hàm connectSSO trực tiếp bằng JavaScript
+                await page.evaluate("""
+                    async () => {
+                        // Kiểm tra xem hàm connectSSO có tồn tại không
+                        if (typeof connectSSO === 'function') {
+                            await connectSSO('360103', '', '', '');
+                            return { success: true, message: 'connectSSO called' };
+                        } else {
+                            return { success: false, message: 'connectSSO function not found' };
+                        }
+                    }
+                """)
+                logger.info("connectSSO('360103', '', '', '') called successfully")
+                # Đợi AJAX hoàn tất và iframe được set src
+                await asyncio.sleep(3)
+            except Exception as e:
+                logger.error(f"Error calling connectSSO: {e}")
+                return False
+            
+            # Bước 3: Đợi iframe load với src từ thuedientu.gdt.gov.vn
+            logger.info("Waiting for iframe to load with thuedientu.gdt.gov.vn...")
+            
+            # Tìm iframe trong #iframeRenderSSO
+            max_wait = 20  # Đợi tối đa 10 giây (20 * 0.5)
+            for i in range(max_wait):
+                try:
+                    # Tìm iframe trong modal #iframeRenderSSO
+                    iframe_elem = page.locator('#iframeRenderSSO iframe').first
+                    if await iframe_elem.count() > 0:
+                        # Lấy src của iframe
+                        iframe_src = await iframe_elem.get_attribute('src')
+                        if iframe_src and 'thuedientu.gdt.gov.vn' in iframe_src:
+                            logger.info(f"Found iframe with src: {iframe_src[:100]}...")
+                            
+                            # Tìm frame từ page.frames
+                            frames = page.frames
+                            for f in frames:
+                                if 'thuedientu.gdt.gov.vn' in f.url:
+                                    frame = f
+                                    logger.info(f"Found frame: {frame.url[:100]}...")
+                                    break
+                            
+                            if frame:
+                                break
+                except Exception as e:
+                    logger.debug(f"Waiting for iframe (attempt {i + 1}/{max_wait}): {e}")
+                
                 await asyncio.sleep(0.5)
             
-            # Click vào "Tra cứu tờ khai" (li thứ 8 trong submenu)
-            submenu_items = page.locator('div.div-left-menu ul li')
-            if await submenu_items.count() >= 8:
-                await submenu_items.nth(7).click()  # Index 7 = li thứ 8
-                await asyncio.sleep(1)
+            # Bước 4: Switch vào iframe và đợi #maTKhai xuất hiện
+            if frame:
+                try:
+                    logger.info("Waiting for #maTKhai in iframe...")
+                    await frame.wait_for_load_state('domcontentloaded', timeout=15000)
+                    await asyncio.sleep(1)
+                    await frame.wait_for_selector('#maTKhai', timeout=15000)
+                    success = True
+                    logger.info("Tra cuu tokhai page loaded successfully via SSO iframe")
+                except Exception as e:
+                    logger.warning(f"Frame found but #maTKhai not found: {e}")
+                    # Thử đợi thêm một chút
+                    try:
+                        await asyncio.sleep(2)
+                        await frame.wait_for_selector('#maTKhai', timeout=10000)
+                        success = True
+                        logger.info("Tra cuu tokhai page loaded after additional wait")
+                    except:
+                        logger.error("Still cannot find #maTKhai after additional wait")
+            else:
+                logger.error("Iframe not found after clicking connectSSO link")
             
-            return True
+            return success
             
         except Exception as e:
-            logger.error(f"Error navigating to tokhai search: {e}")
+            logger.error(f"Error navigating to tokhai page: {e}")
+            return False
+    
+    async def _navigate_to_tokhai_search(self, session: SessionData) -> bool:
+        """
+        Navigate đến trang tra cứu tờ khai (deprecated - dùng _navigate_to_tokhai_page)
+        Returns: True nếu thành công
+        """
+        return await self._navigate_to_tokhai_page(session.page, session.dse_session_id)
+    
+    async def _navigate_to_thongbao_page(self, page, dse_session_id: str) -> bool:
+        """
+        Navigate đến trang tra cứu thông báo bằng JavaScript (nhanh hơn click menu)
+        openPage('lookUpNotificationProc')
+        
+        Returns: True nếu thành công
+        """
+        success = False
+        
+        try:
+            # Cách 1: Gọi JavaScript function openPage
+            try:
+                await page.evaluate("""
+                    () => {
+                        if (typeof openPage === 'function') {
+                            openPage('lookUpNotificationProc');
+                            return true;
+                        }
+                        return false;
+                    }
+                """)
+                logger.info("Called openPage('lookUpNotificationProc') via JavaScript")
+                await asyncio.sleep(1.5)
+                
+                frame = page.frame('mainframe')
+                if frame:
+                    try:
+                        # Đợi form thông báo load - kiểm tra input qryFromDate
+                        await frame.wait_for_selector('#qryFromDate', timeout=10000)
+                        success = True
+                        logger.info("Thong bao page loaded successfully via JS")
+                    except:
+                        logger.warning("Frame loaded but form not found")
+            except Exception as e:
+                logger.warning(f"JavaScript openPage failed: {e}")
+            
+            # Cách 2: Navigate trực tiếp iframe bằng URL
+            if not success:
+                try:
+                    current_url = page.url
+                    dse_match = re.search(r'dse_sessionId=([^&]+)', current_url)
+                    dse_session = dse_match.group(1) if dse_match else dse_session_id
+                    
+                    if dse_session:
+                        iframe_url = f"/etaxnnt/Request?dse_sessionId={dse_session}&dse_applicationId=-1&dse_pageId=10&dse_operationName=lookUpNotificationProc&dse_processorState=initial&dse_nextEventName=start"
+                        
+                        await page.evaluate(f"""
+                            () => {{
+                                const iframe = document.getElementById('tranFrame') || document.querySelector('iframe[name="mainframe"]');
+                                if (iframe) {{
+                                    iframe.src = '{iframe_url}';
+                                    return true;
+                                }}
+                                return false;
+                            }}
+                        """)
+                        logger.info("Set iframe src directly to thong bao page")
+                        await asyncio.sleep(2)
+                        
+                        frame = page.frame('mainframe')
+                        if frame:
+                            try:
+                                await frame.wait_for_selector('#qryFromDate', timeout=10000)
+                                success = True
+                                logger.info("Thong bao page loaded via direct iframe navigation")
+                            except:
+                                logger.warning("Direct iframe navigation failed")
+                except Exception as e2:
+                    logger.warning(f"Direct iframe navigation failed: {e2}")
+            
+            # Cách 3: Fallback - click menu như cũ
+            if not success:
+                logger.info("Falling back to menu click method for thongbao...")
+                for retry in range(2):
+                    try:
+                        menu_ke_toan = page.locator('//html/body/div[1]/div[2]/ul/li[3]')
+                        await menu_ke_toan.wait_for(state='visible', timeout=8000)
+                        await menu_ke_toan.click(timeout=5000)
+                        await asyncio.sleep(0.8)
+                        
+                        tra_cuu = page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[9]')
+                        await tra_cuu.wait_for(state='visible', timeout=8000)
+                        await tra_cuu.click(timeout=5000)
+                        
+                        await asyncio.sleep(1)
+                        frame = page.frame('mainframe')
+                        if frame:
+                            try:
+                                await frame.wait_for_selector('#qryFromDate', timeout=10000)
+                                success = True
+                                break
+                            except:
+                                pass
+                    except Exception as e3:
+                        logger.warning(f"Menu click attempt {retry + 1} failed: {e3}")
+                        if retry == 0:
+                            await page.reload(wait_until='domcontentloaded', timeout=15000)
+                            await asyncio.sleep(2)
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error navigating to thongbao page: {e}")
+            return False
+    
+    async def _navigate_to_giaynoptien_page(self, page, dse_session_id: str) -> bool:
+        """
+        Navigate đến trang tra cứu giấy nộp tiền bằng JavaScript (nhanh hơn click menu)
+        openPage('corpQueryTaxProc')
+        
+        Returns: True nếu thành công
+        """
+        success = False
+        
+        try:
+            # Cách 1: Gọi JavaScript function openPage
+            try:
+                await page.evaluate("""
+                    () => {
+                        if (typeof openPage === 'function') {
+                            openPage('corpQueryTaxProc');
+                            return true;
+                        }
+                        return false;
+                    }
+                """)
+                logger.info("Called openPage('corpQueryTaxProc') via JavaScript")
+                await asyncio.sleep(1.5)
+                
+                frame = page.frame('mainframe')
+                if frame:
+                    try:
+                        # Đợi form giấy nộp tiền load
+                        await frame.wait_for_selector('input[name="ngay_lap_tu_ngay"], #ngay_lap_tu_ngay', timeout=10000)
+                        success = True
+                        logger.info("Giay nop tien page loaded successfully via JS")
+                    except:
+                        logger.warning("Frame loaded but form not found")
+            except Exception as e:
+                logger.warning(f"JavaScript openPage failed: {e}")
+            
+            # Cách 2: Navigate trực tiếp iframe bằng URL
+            if not success:
+                try:
+                    current_url = page.url
+                    dse_match = re.search(r'dse_sessionId=([^&]+)', current_url)
+                    dse_session = dse_match.group(1) if dse_match else dse_session_id
+                    
+                    if dse_session:
+                        iframe_url = f"/etaxnnt/Request?dse_sessionId={dse_session}&dse_applicationId=-1&dse_pageId=10&dse_operationName=corpQueryTaxProc&dse_processorState=initial&dse_nextEventName=start"
+                        
+                        await page.evaluate(f"""
+                            () => {{
+                                const iframe = document.getElementById('tranFrame') || document.querySelector('iframe[name="mainframe"]');
+                                if (iframe) {{
+                                    iframe.src = '{iframe_url}';
+                                    return true;
+                                }}
+                                return false;
+                            }}
+                        """)
+                        logger.info("Set iframe src directly to giay nop tien page")
+                        await asyncio.sleep(2)
+                        
+                        frame = page.frame('mainframe')
+                        if frame:
+                            try:
+                                await frame.wait_for_selector('input[name="ngay_lap_tu_ngay"], #ngay_lap_tu_ngay', timeout=10000)
+                                success = True
+                                logger.info("Giay nop tien page loaded via direct iframe navigation")
+                            except:
+                                logger.warning("Direct iframe navigation failed")
+                except Exception as e2:
+                    logger.warning(f"Direct iframe navigation failed: {e2}")
+            
+            # Cách 3: Fallback - click menu như cũ
+            if not success:
+                logger.info("Falling back to menu click method for giaynoptien...")
+                for retry in range(2):
+                    try:
+                        # Click menu "Nộp thuế" (li thứ 4)
+                        menu_nop_thue = page.locator('//html/body/div[1]/div[2]/ul/li[4]')
+                        await menu_nop_thue.wait_for(state='visible', timeout=8000)
+                        await menu_nop_thue.click(timeout=5000)
+                        await asyncio.sleep(0.8)
+                        
+                        # Click "Tra cứu giấy nộp tiền" (li thứ 4 trong submenu)
+                        tra_cuu = page.locator('//html/body/div[1]/div[3]/div/div[4]/ul/li[4]')
+                        await tra_cuu.wait_for(state='visible', timeout=8000)
+                        await tra_cuu.click(timeout=5000)
+                        
+                        await asyncio.sleep(1)
+                        frame = page.frame('mainframe')
+                        if frame:
+                            try:
+                                await frame.wait_for_selector('input[name="ngay_lap_tu_ngay"], #ngay_lap_tu_ngay', timeout=10000)
+                                success = True
+                                break
+                            except:
+                                pass
+                    except Exception as e3:
+                        logger.warning(f"Menu click attempt {retry + 1} failed: {e3}")
+                        if retry == 0:
+                            await page.reload(wait_until='domcontentloaded', timeout=15000)
+                            await asyncio.sleep(2)
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error navigating to giaynoptien page: {e}")
             return False
     
     async def crawl_tokhai_info(
@@ -212,23 +547,12 @@ class TaxCrawlerService:
         try:
             yield {"type": "info", "message": "Đang navigate đến trang tra cứu..."}
             
-            # Navigate đến trang tra cứu tờ khai
-            try:
-                await page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[8]').click(timeout=10000)
-                logger.info("Clicked directly on tra cuu tokhai menu")
-            except Exception as e1:
-                logger.info(f"Direct click failed: {e1}, trying menu first...")
-                try:
-                    menu_ke_toan = page.locator('//html/body/div[1]/div[2]/ul/li[3]')
-                    await menu_ke_toan.click(timeout=5000)
-                    await asyncio.sleep(1)
-                    tra_cuu = page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[8]')
-                    await tra_cuu.click(timeout=10000)
-                except Exception as e2:
-                    yield {"type": "error", "error": f"Không thể navigate đến trang tra cứu. Lỗi: {str(e2)}"}
-                    return
+            # Navigate đến trang tra cứu tờ khai bằng JavaScript (nhanh hơn click menu)
+            success = await self._navigate_to_tokhai_page(page, session.dse_session_id)
             
-            await asyncio.sleep(1)
+            if not success:
+                yield {"type": "error", "error": "Không thể navigate đến trang tra cứu. Vui lòng thử lại."}
+                return
             
             # Switch to mainframe
             frame = page.frame('mainframe')
@@ -461,45 +785,65 @@ class TaxCrawlerService:
         try:
             yield {"type": "info", "message": "Đang navigate đến trang tra cứu..."}
             
-            # Log current URL
-            logger.info(f"Current URL: {page.url}")
+            # Bước 1: Gọi _navigate_to_tokhai_page để click vào link và lấy iframe src
+            logger.info("Calling _navigate_to_tokhai_page to get iframe src...")
+            success = await self._navigate_to_tokhai_page(page, ssid)
             
-            # Navigate đến trang tra cứu tờ khai
-            # Đầu tiên click vào menu "Kê khai thuế" (menu chính)
+            if not success:
+                yield {"type": "error", "error": "Không thể navigate đến trang tra cứu. Vui lòng thử lại."}
+                return
+            
+            # Bước 2: Lấy src của iframe từ #iframeRenderSSO
+            logger.info("Getting iframe src from #iframeRenderSSO...")
+            iframe_src = None
             try:
-                # Thử click trực tiếp vào tra cứu tờ khai
-                await page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[8]').click(timeout=10000)
-                logger.info("Clicked directly on tra cuu tokhai menu")
-            except Exception as e1:
-                logger.info(f"Direct click failed: {e1}, trying menu first...")
-                # Thử click menu Kế toán thuế trước
-                try:
-                    menu_ke_toan = page.locator('//html/body/div[1]/div[2]/ul/li[3]')
-                    await menu_ke_toan.click(timeout=5000)
-                    logger.info("Clicked on Ke toan thue menu")
-                    await asyncio.sleep(1)
-                    
-                    # Sau đó click vào tra cứu tờ khai
-                    tra_cuu = page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[8]')
-                    await tra_cuu.click(timeout=10000)
-                    logger.info("Clicked on tra cuu tokhai submenu")
-                except Exception as e2:
-                    logger.error(f"Menu click failed: {e2}")
-                    # Screenshot để debug
-                    try:
-                        screenshot = await page.screenshot()
-                        logger.info(f"Page screenshot taken, size: {len(screenshot)} bytes")
-                    except:
-                        pass
-                    yield {"type": "error", "error": f"Không thể navigate đến trang tra cứu. Lỗi: {str(e2)}"}
-                    return
+                iframe_elem = page.locator('#iframeRenderSSO iframe').first
+                if await iframe_elem.count() > 0:
+                    iframe_src = await iframe_elem.get_attribute('src')
+                    if iframe_src:
+                        logger.info(f"Got iframe src: {iframe_src[:100]}...")
+                    else:
+                        logger.warning("Iframe src is empty")
+                else:
+                    logger.warning("Iframe element not found in #iframeRenderSSO")
+            except Exception as e:
+                logger.warning(f"Error getting iframe src: {e}")
             
-            await asyncio.sleep(1)
+            # Bước 3: Tìm frame từ page.frames với URL chứa thuedientu.gdt.gov.vn
+            frame = None
+            try:
+                frames = page.frames
+                for f in frames:
+                    if 'thuedientu.gdt.gov.vn' in f.url:
+                        frame = f
+                        logger.info(f"Found frame: {frame.url[:100]}...")
+                        break
+            except Exception as e:
+                logger.warning(f"Error finding frame: {e}")
             
-            # Switch to mainframe
-            frame = page.frame('mainframe')
             if not frame:
-                yield {"type": "error", "error": "Không tìm thấy mainframe"}
+                yield {"type": "error", "error": "Không tìm thấy iframe sau khi navigate. Vui lòng thử lại."}
+                return
+            
+            # Bước 4: Đợi frame load và kiểm tra #maTKhai
+            try:
+                await frame.wait_for_load_state('domcontentloaded', timeout=15000)
+                await asyncio.sleep(1)
+                await frame.wait_for_selector('#maTKhai', timeout=15000)
+                logger.info("Tra cuu tokhai form loaded successfully")
+            except Exception as e:
+                logger.warning(f"Frame found but #maTKhai not found: {e}")
+                yield {"type": "error", "error": "Không tìm thấy form tra cứu. Vui lòng thử lại."}
+                return
+            
+            # Check session timeout
+            if await self._check_session_timeout(page):
+                yield {
+                    "type": "error",
+                    "error": "SESSION_EXPIRED",
+                    "error_code": "SESSION_EXPIRED",
+                    "message": "Phiên giao dịch hết hạn. Vui lòng đăng nhập lại."
+                }
                 return
             
             yield {"type": "info", "message": "Đang chọn loại tờ khai..."}
@@ -565,7 +909,7 @@ class TaxCrawlerService:
                     await start_input.fill(date_range[0])
                     
                     # Nhập ngày kết thúc (id="qryToDate")
-                    end_input = frame.locator('#qryToDate')
+                    end_input = frame.locator('#qryFromDate')
                     await end_input.click()
                     await end_input.fill('')
                     await end_input.fill(date_range[1])
@@ -849,11 +1193,35 @@ class TaxCrawlerService:
                         else:
                             logger.warning(f"Download failed: File not saved or empty for {id_tk}")
                     else:
-                        # Tờ khai đặc biệt - không có link <a> (giống code cũ)
+                        # Tờ khai đặc biệt - không có link <a> download (không có onclick="downloadTkhai" hoặc title="Tải tệp")
                         # Dùng URL trực tiếp với dse_pageId=14 và messageId={id_tk}
+                        logger.info(f"Special tokhai (no download link) detected: {id_tk}, using manual download method")
                         current_ssid = ssid
                         
-                        # Nếu ssid không có, thử lấy lại từ performance logs (giống code cũ)
+                        # Ưu tiên 1: Lấy từ input hidden trong form traCuuKhaiForm
+                        if not current_ssid or current_ssid == "NotFound":
+                            try:
+                                dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
+                                if await dse_session_input.count() > 0:
+                                    current_ssid = await dse_session_input.get_attribute('value') or ""
+                                    if current_ssid:
+                                        logger.info(f"Retrieved dse_sessionId from form input: {current_ssid[:30]}...")
+                            except Exception as e:
+                                logger.warning(f"Error getting dse_sessionId from form input: {e}")
+                        
+                        # Ưu tiên 2: Lấy từ frame URL
+                        if not current_ssid or current_ssid == "NotFound":
+                            try:
+                                # Lấy từ frame URL
+                                frame_url = frame.url
+                                match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
+                                if match:
+                                    current_ssid = match.group(1)
+                                    logger.info(f"Retrieved dse_sessionId from frame URL: {current_ssid[:30]}...")
+                            except Exception as e:
+                                logger.warning(f"Error getting dse_sessionId from frame URL: {e}")
+                        
+                        # Fallback: Lấy từ performance logs (giống code cũ)
                         if not current_ssid or current_ssid == "NotFound":
                             try:
                                 # Lấy từ performance logs
@@ -867,7 +1235,7 @@ class TaxCrawlerService:
                                     match = re.search(r"[&?]dse_sessionId=([^&]+)", url)
                                     if match:
                                         current_ssid = match.group(1)
-                                        logger.info(f"Retrieved dse_sessionId from performance log: {current_ssid}")
+                                        logger.info(f"Retrieved dse_sessionId from performance log: {current_ssid[:30]}...")
                                         break
                             except Exception as e:
                                 logger.warning(f"Error getting dse_sessionId from performance logs: {e}")
@@ -875,9 +1243,11 @@ class TaxCrawlerService:
                         if current_ssid and current_ssid != "NotFound":
                             dse_processor_id = ""
                             try:
-                                processor_id_input = frame.locator('input[name="dse_processorId"]')
+                                processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
                                 if await processor_id_input.count() > 0:
                                     dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
+                                    if dse_processor_id:
+                                        logger.info(f"Retrieved dse_processorId from form: {dse_processor_id[:30]}...")
                             except:
                                 pass
                             
@@ -987,24 +1357,27 @@ class TaxCrawlerService:
         try:
             yield {"type": "info", "message": "Đang navigate đến trang tra cứu thông báo..."}
             
-            # Navigate đến trang tra cứu thông báo
-            try:
-                await page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[9]').click(timeout=10000)
-            except:
-                try:
-                    await page.locator('//html/body/div[1]/div[2]/ul/li[3]').click(timeout=5000)
-                    await asyncio.sleep(0.5)
-                    await page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[9]').click(timeout=10000)
-                except:
-                    yield {"type": "error", "error": "Không thể navigate đến trang tra cứu thông báo"}
-                    return
+            # Navigate đến trang tra cứu thông báo bằng JavaScript (nhanh hơn)
+            success = await self._navigate_to_thongbao_page(page, ssid)
             
-            await asyncio.sleep(1)
+            if not success:
+                yield {"type": "error", "error": "Không thể navigate đến trang tra cứu thông báo. Vui lòng thử lại."}
+                return
             
             # Switch to mainframe
             frame = page.frame('mainframe')
             if not frame:
                 yield {"type": "error", "error": "Không tìm thấy mainframe"}
+                return
+            
+            # Check session timeout
+            if await self._check_session_timeout(page):
+                yield {
+                    "type": "error",
+                    "error": "SESSION_EXPIRED",
+                    "error_code": "SESSION_EXPIRED",
+                    "message": "Phiên giao dịch hết hạn. Vui lòng đăng nhập lại."
+                }
                 return
             
             # Chia khoảng thời gian
@@ -1026,29 +1399,29 @@ class TaxCrawlerService:
                 }
                 
                 try:
-                    # Nhập ngày bắt đầu
-                    start_input = frame.locator('//html/body/form/div[2]/div[1]/table[1]/tbody/tr[3]/td[2]/input')
+                    # Nhập ngày bắt đầu - dùng id qryFromDate theo HTML form
+                    start_input = frame.locator('#qryFromDate')
                     await start_input.fill('')
                     await start_input.fill(date_range[0])
                     
-                    # Nhập ngày kết thúc
-                    end_input = frame.locator('//html/body/form/div[2]/div[1]/table[1]/tbody/tr[3]/td[3]/input')
+                    # Nhập ngày kết thúc - dùng id qryToDate theo HTML form
+                    end_input = frame.locator('#qryToDate')
                     await end_input.click()
                     await end_input.fill('')
                     await end_input.fill(date_range[1])
                     
-                    # Click tìm kiếm
-                    search_btn = frame.locator('//html/body/form/div[2]/div[1]/table[2]/tbody/tr/td/div/input')
+                    # Click tìm kiếm - button "Tra cứu"
+                    search_btn = frame.locator('input[value="Tra cứu"]')
                     await search_btn.click()
                     
                     await asyncio.sleep(2)
                     
-                    # Xử lý phân trang (giống tờ khai)
+                    # Xử lý phân trang
                     check_pages = True
                     while check_pages:
-                        # Tìm bảng kết quả
+                        # Tìm bảng kết quả - theo HTML: #allResultTableBody hoặc table.result_table tbody
                         try:
-                            table_body = frame.locator('//html/body/form/div[2]/div[3]/div[2]/div[2]/div/div/table/tbody')
+                            table_body = frame.locator('#allResultTableBody, table.result_table tbody, table#data_content_onday tbody').first
                             await table_body.wait_for(timeout=5000)
                         except:
                             if total_count == 0:
@@ -1061,7 +1434,7 @@ class TaxCrawlerService:
                         yield {"type": "progress", "current": total_count, "message": f"Đang xử lý {row_count} thông báo (trang hiện tại)..."}
                         
                         download_queue = []
-                        page_valid_count = 0  # Đếm số items hợp lệ trong trang này
+                        page_valid_count = 0
                         
                         for i in range(row_count):
                             try:
@@ -1069,69 +1442,116 @@ class TaxCrawlerService:
                                 cols = row.locator('td')
                                 col_count = await cols.count()
                                 
-                                if col_count < 3:
+                                if col_count < 6:
                                     continue
                                 
-                                # Cột 2: Mã giao dịch (theo HTML contentthongbao.html)
-                                id_tb = await cols.nth(2).text_content()
-                                id_tb = id_tb.strip() if id_tb else ""
+                                # Theo HTML contentthongbao.html:
+                                # Cột 0: STT
+                                # Cột 1: CQ thông báo (Ngân hàng/Cơ quan thuế)
+                                # Cột 2: Mã giao dịch
+                                # Cột 3: Loại thông báo
+                                # Cột 4: Số thông báo
+                                # Cột 5: Ngày thông báo
+                                # Cột 6-9: Số GNT, Mã hiệu chứng từ, Số chứng từ, Ngày nộp thuế
+                                # Cột 10: Chi tiết | Tải về
                                 
-                                if not id_tb:
+                                # Cột 2: Mã giao dịch
+                                ma_giao_dich = await cols.nth(2).text_content()
+                                ma_giao_dich = ma_giao_dich.strip() if ma_giao_dich else ""
+                                
+                                if not ma_giao_dich or len(ma_giao_dich) < 5:
                                     continue
                                 
                                 # Chỉ đếm khi item hợp lệ
                                 page_valid_count += 1
                                 
-                                # Cột 1: Số thông báo
-                                so_tb = await cols.nth(1).text_content()
-                                so_tb = so_tb.strip() if so_tb else ""
+                                # Cột 1: CQ thông báo
+                                cq_thong_bao = await cols.nth(1).text_content()
+                                cq_thong_bao = cq_thong_bao.strip() if cq_thong_bao else ""
                                 
-                                # Cột 3: Tên thông báo
-                                ten_tb = await cols.nth(3).text_content()
-                                ten_tb = ten_tb.strip() if ten_tb else ""
+                                # Cột 3: Loại thông báo
+                                loai_thong_bao = await cols.nth(3).text_content()
+                                loai_thong_bao = loai_thong_bao.strip() if loai_thong_bao else ""
                                 
-                                # Cột 4: Ngày gửi
-                                ngay_gui = await cols.nth(4).text_content()
-                                ngay_gui = ngay_gui.strip() if ngay_gui else ""
+                                # Cột 4: Số thông báo
+                                so_thong_bao = await cols.nth(4).text_content()
+                                so_thong_bao = so_thong_bao.strip() if so_thong_bao else ""
                                 
-                                if not id_tb:
-                                    continue
+                                # Cột 5: Ngày thông báo
+                                ngay_thong_bao = await cols.nth(5).text_content()
+                                ngay_thong_bao = ngay_thong_bao.strip() if ngay_thong_bao else ""
                                 
                                 result = {
-                                    "id": id_tb,
-                                    "so_thong_bao": so_tb,
-                                    "ten_thong_bao": ten_tb,
-                                    "ngay_gui": ngay_gui,
+                                    "id": ma_giao_dich,
+                                    "ma_giao_dich": ma_giao_dich,
+                                    "cq_thong_bao": cq_thong_bao,
+                                    "loai_thong_bao": loai_thong_bao,
+                                    "so_thong_bao": so_thong_bao,
+                                    "ngay_thong_bao": ngay_thong_bao,
                                     "type": "thongbao"
                                 }
                                 results.append(result)
                                 
                                 yield {"type": "item", "data": result}
                                 
-                                # Lưu vào queue để download batch (cột 5 là Tải về)
-                                if col_count > 5:
-                                    # Tạo tên file từ thông tin thông báo (giống code cũ)
-                                    file_name = f"{id_tb} - {ten_tb[:50]} - {ngay_gui.replace('/', '-')}"
-                                    file_name = self._remove_accents(file_name)
-                                    file_name = file_name.replace("/", "_").replace(":", "_").replace("\\", "_")
+                                # Tìm link "Tải về" trong cột cuối
+                                # Theo HTML: có 11 cột (index 0-10), cột cuối chứa "Chi tiết | Tải về"
+                                last_col_index = col_count - 1  # Cột cuối cùng
+                                if last_col_index >= 10:
+                                    last_col = cols.nth(last_col_index)
+                                    download_link = last_col.locator('a:has-text("Tải về")')
                                     
-                                    download_queue.append({
-                                        "id": id_tb,
-                                        "so_thong_bao": so_tb,
-                                        "ten_thong_bao": ten_tb,
-                                        "ngay_gui": ngay_gui,
-                                        "file_name": file_name,
-                                        "cols": cols,
-                                        "col_index": 5
-                                    })
+                                    if await download_link.count() > 0:
+                                        # Tạo tên file từ thông tin thông báo
+                                        ngay_clean = ngay_thong_bao.replace("/", "-").replace(":", "-").replace(" ", "_")
+                                        file_name = f"{ma_giao_dich} - {loai_thong_bao[:40]} - {ngay_clean}"
+                                        file_name = self._remove_accents(file_name)
+                                        file_name = file_name.replace("/", "_").replace(":", "_").replace("\\", "_")
+                                        
+                                        download_queue.append({
+                                            "id": ma_giao_dich,
+                                            "loai_thong_bao": loai_thong_bao,
+                                            "ngay_thong_bao": ngay_thong_bao,
+                                            "file_name": file_name,
+                                            "download_link": download_link,
+                                            "cols": cols,
+                                            "col_index": last_col_index
+                                        })
                             
                             except Exception as e:
                                 logger.error(f"Error processing row: {e}")
                                 continue
                         
-                        # Batch download
+                        # Download từng file và yield progress
                         if download_queue:
-                            await self._batch_download_thongbao(session, download_queue, temp_dir, frame)
+                            queue_total = len(download_queue)
+                            yield {
+                                "type": "download_start",
+                                "total_to_download": queue_total,
+                                "message": f"Bắt đầu tải {queue_total} thông báo..."
+                            }
+                            
+                            downloaded = 0
+                            for item in download_queue:
+                                success = await self._download_single_thongbao(session, item, temp_dir)
+                                if success:
+                                    downloaded += 1
+                                
+                                yield {
+                                    "type": "download_progress",
+                                    "downloaded": downloaded,
+                                    "total": queue_total,
+                                    "percent": round(downloaded / queue_total * 100, 1) if queue_total > 0 else 0,
+                                    "current_item": item.get("id", ""),
+                                    "message": f"Đã tải {downloaded}/{queue_total} ({round(downloaded / queue_total * 100, 1) if queue_total > 0 else 0}%)"
+                                }
+                            
+                            yield {
+                                "type": "download_complete",
+                                "downloaded": downloaded,
+                                "total": queue_total,
+                                "message": f"Hoàn thành tải {downloaded}/{queue_total} thông báo"
+                            }
                         
                         # Chỉ cộng số items hợp lệ vào total_count
                         total_count += page_valid_count
@@ -1152,13 +1572,17 @@ class TaxCrawlerService:
                     yield {"type": "warning", "message": f"Lỗi xử lý khoảng {date_range}: {str(e)}"}
                     continue
             
-            # Parse downloaded files và rename 
+            # Parse downloaded files và rename
             parsed_results = []
-            if os.listdir(temp_dir):
-                file_list = os.listdir(temp_dir)
-                
-                for file_name in file_list:
+            files_in_temp_dir = os.listdir(temp_dir) if os.path.exists(temp_dir) else []
+            logger.info(f"crawl_thongbao: Found {len(files_in_temp_dir)} files in temp_dir")
+            
+            if files_in_temp_dir:
+                for file_name in files_in_temp_dir:
                     file_path = os.path.join(temp_dir, file_name)
+                    if not os.path.isfile(file_path):
+                        continue
+                    
                     try:
                         # Parse XML để lấy thông tin
                         with open(file_path, 'r', encoding='utf-8') as f:
@@ -1230,17 +1654,27 @@ class TaxCrawlerService:
                             pass
                         continue
                 
-                # Tạo ZIP
+                # Tạo ZIP từ tất cả file trong temp_dir (sau khi parse/rename)
                 zip_buffer = BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for file_name in os.listdir(temp_dir):
-                        file_path = os.path.join(temp_dir, file_name)
-                        if os.path.isfile(file_path):
-                            zf.write(file_path, file_name)
+                final_files = os.listdir(temp_dir)
+                logger.info(f"crawl_thongbao: Creating ZIP from {len(final_files)} files")
                 
-                zip_base64 = base64.b64encode(zip_buffer.getvalue()).decode('utf-8')
+                if final_files:
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        for file_name in final_files:
+                            file_path = os.path.join(temp_dir, file_name)
+                            if os.path.isfile(file_path):
+                                zf.write(file_path, file_name)
+                                logger.debug(f"Added to ZIP: {file_name}")
+                    
+                    zip_base64 = base64.b64encode(zip_buffer.getvalue()).decode('utf-8')
+                    logger.info(f"crawl_thongbao: ZIP created, base64 length: {len(zip_base64)}")
+                else:
+                    zip_base64 = None
+                    logger.warning("crawl_thongbao: No files to add to ZIP")
             else:
                 zip_base64 = None
+                logger.warning("crawl_thongbao: No files in temp_dir")
             
             actual_files_count = len(files_info)
             actual_results_count = len(parsed_results)
@@ -1265,32 +1699,53 @@ class TaxCrawlerService:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
     
-    async def _batch_download_thongbao(self, session: SessionData, download_queue: List[Dict], temp_dir: str, frame):
-        """Download thông báo song song"""
-        semaphore = asyncio.Semaphore(5)
+    async def _download_single_thongbao(self, session: SessionData, item: Dict, temp_dir: str, max_retries: int = 2) -> bool:
+        """
+        Download 1 file thông báo với retry logic
+        
+        Returns:
+            True nếu download thành công
+        """
         page = session.page
+        id_tb = item["id"]
+        file_name = item.get("file_name", id_tb)
         
-        async def download_one(item: Dict):
-            async with semaphore:
-                try:
-                    id_tb = item["id"]
-                    file_name = item.get("file_name", id_tb)
-                    cols = item["cols"]
-                    col_idx = item["col_index"]
+        for retry in range(max_retries + 1):
+            try:
+                # Ưu tiên dùng download_link đã tìm sẵn
+                download_link = item.get("download_link")
+                
+                if not download_link:
+                    # Fallback: tìm lại từ cols
+                    cols = item.get("cols")
+                    col_idx = item.get("col_index", 10)
+                    if cols:
+                        download_link = cols.nth(col_idx).locator('a:has-text("Tải về")')
+                
+                if download_link and await download_link.count() > 0:
+                    async with page.expect_download(timeout=30000) as download_info:
+                        await download_link.first.click()
                     
-                    download_link = cols.nth(col_idx).locator('a')
-                    if await download_link.count() > 0:
-                        async with page.expect_download(timeout=30000) as download_info:
-                            await download_link.first.click()
-                        
-                        download = await download_info.value
-                        save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                        await download.save_as(save_path)
+                    download = await download_info.value
+                    save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                    await download.save_as(save_path)
+                    
+                    # Verify file exists and has content
+                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
                         logger.info(f"Downloaded thongbao {id_tb} -> {file_name}")
-                except Exception as e:
-                    logger.warning(f"Error downloading {item['id']}: {e}")
+                        return True
+                    else:
+                        raise Exception("File empty or not saved")
+                else:
+                    logger.warning(f"No download link for thongbao {id_tb}")
+                    return False
+                    
+            except Exception as e:
+                logger.warning(f"Error downloading thongbao {id_tb} (attempt {retry + 1}/{max_retries + 1}): {e}")
+                if retry < max_retries:
+                    await asyncio.sleep(1)  # Wait before retry
         
-        await asyncio.gather(*[download_one(item) for item in download_queue], return_exceptions=True)
+        return False
     
     async def crawl_giay_nop_tien(
         self,
@@ -1317,16 +1772,22 @@ class TaxCrawlerService:
         try:
             yield {"type": "info", "message": "Đang navigate đến trang tra cứu giấy nộp thuế..."}
             
-            # Navigate đến trang giấy nộp thuế
-            try:
-                await page.locator('//html/body/div[1]/div[2]/ul/li[4]').click(timeout=10000)
-                await asyncio.sleep(0.5)
-                await page.locator('//html/body/div[1]/div[3]/div/div[4]/ul/li[4]').click(timeout=10000)
-            except:
-                yield {"type": "error", "error": "Không thể navigate đến trang tra cứu giấy nộp thuế"}
+            # Navigate đến trang giấy nộp tiền bằng JavaScript (nhanh hơn)
+            success = await self._navigate_to_giaynoptien_page(page, ssid)
+            
+            if not success:
+                yield {"type": "error", "error": "Không thể navigate đến trang tra cứu giấy nộp thuế. Vui lòng thử lại."}
                 return
             
-            await asyncio.sleep(1)
+            # Check session timeout
+            if await self._check_session_timeout(page):
+                yield {
+                    "type": "error",
+                    "error": "SESSION_EXPIRED",
+                    "error_code": "SESSION_EXPIRED",
+                    "message": "Phiên giao dịch hết hạn. Vui lòng đăng nhập lại."
+                }
+                return
             
             # Giấy nộp tiền không có mainframe, dùng page trực tiếp
             # Nhưng vẫn thử tìm mainframe trước, nếu không có thì dùng page
@@ -1508,9 +1969,36 @@ class TaxCrawlerService:
                                 i += 1
                                 continue
                         
-                        # Batch download
+                        # Download từng file và yield progress
                         if download_queue:
-                            await self._batch_download_giaynoptien(session, download_queue, temp_dir, frame)
+                            queue_total = len(download_queue)
+                            yield {
+                                "type": "download_start",
+                                "total_to_download": queue_total,
+                                "message": f"Bắt đầu tải {queue_total} giấy nộp tiền..."
+                            }
+                            
+                            downloaded = 0
+                            for item in download_queue:
+                                success = await self._download_single_giaynoptien(session, item, temp_dir)
+                                if success:
+                                    downloaded += 1
+                                
+                                yield {
+                                    "type": "download_progress",
+                                    "downloaded": downloaded,
+                                    "total": queue_total,
+                                    "percent": round(downloaded / queue_total * 100, 1) if queue_total > 0 else 0,
+                                    "current_item": item.get("id", ""),
+                                    "message": f"Đã tải {downloaded}/{queue_total} ({round(downloaded / queue_total * 100, 1) if queue_total > 0 else 0}%)"
+                                }
+                            
+                            yield {
+                                "type": "download_complete",
+                                "downloaded": downloaded,
+                                "total": queue_total,
+                                "message": f"Hoàn thành tải {downloaded}/{queue_total} giấy nộp tiền"
+                            }
                         
                         # Chỉ cộng số items hợp lệ vào total_count
                         total_count += page_valid_count
@@ -1533,12 +2021,17 @@ class TaxCrawlerService:
             
             # Parse downloaded files và rename
             parsed_results = []
-            if os.listdir(temp_dir):
-                file_list = os.listdir(temp_dir)
+            files_in_temp_dir = os.listdir(temp_dir) if os.path.exists(temp_dir) else []
+            logger.info(f"crawl_giay_nop_tien: Found {len(files_in_temp_dir)} files in temp_dir")
+            
+            if files_in_temp_dir:
                 nnn = 0
                 
-                for file_name in file_list:
+                for file_name in files_in_temp_dir:
                     file_path = os.path.join(temp_dir, file_name)
+                    if not os.path.isfile(file_path):
+                        continue
+                    
                     try:
                         # Parse XML để lấy thông tin
                         with open(file_path, 'r', encoding='utf-8') as f:
@@ -1594,17 +2087,27 @@ class TaxCrawlerService:
                             pass
                         continue
                 
-                # Tạo ZIP
+                # Tạo ZIP từ tất cả file trong temp_dir (sau khi parse/rename)
                 zip_buffer = BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for file_name in os.listdir(temp_dir):
-                        file_path = os.path.join(temp_dir, file_name)
-                        if os.path.isfile(file_path):
-                            zf.write(file_path, file_name)
+                final_files = os.listdir(temp_dir)
+                logger.info(f"crawl_giay_nop_tien: Creating ZIP from {len(final_files)} files")
                 
-                zip_base64 = base64.b64encode(zip_buffer.getvalue()).decode('utf-8')
+                if final_files:
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        for file_name in final_files:
+                            file_path = os.path.join(temp_dir, file_name)
+                            if os.path.isfile(file_path):
+                                zf.write(file_path, file_name)
+                                logger.debug(f"Added to ZIP: {file_name}")
+                    
+                    zip_base64 = base64.b64encode(zip_buffer.getvalue()).decode('utf-8')
+                    logger.info(f"crawl_giay_nop_tien: ZIP created, base64 length: {len(zip_base64)}")
+                else:
+                    zip_base64 = None
+                    logger.warning("crawl_giay_nop_tien: No files to add to ZIP")
             else:
                 zip_base64 = None
+                logger.warning("crawl_giay_nop_tien: No files in temp_dir")
             
             actual_files_count = len(files_info)
             actual_results_count = len(parsed_results)
@@ -1629,62 +2132,70 @@ class TaxCrawlerService:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
     
-    async def _batch_download_giaynoptien(self, session: SessionData, download_queue: List[Dict], temp_dir: str, frame):
-        """Download giấy nộp thuế song song (giống tool cũ)"""
-        semaphore = asyncio.Semaphore(5)
+    _gnt_download_counter = 0  # Class-level counter for unique file names
+    
+    async def _download_single_giaynoptien(self, session: SessionData, item: Dict, temp_dir: str, max_retries: int = 2) -> bool:
+        """
+        Download 1 file giấy nộp tiền với retry logic
+        
+        Returns:
+            True nếu download thành công
+        """
         page = session.page
-        name_r = 0
+        id_gnt = item["id"]
         
-        async def download_one(item: Dict):
-            nonlocal name_r
-            async with semaphore:
-                try:
-                    id_gnt = item["id"]
-                    
-                    # Nếu đã có link_locator, dùng trực tiếp
-                    if "link_locator" in item:
-                        download_link = item["link_locator"]
-                    else:
-                        # Fallback: tìm lại link từ row và col_index
-                        row = item.get("row")
-                        col_idx = item.get("col_index")
-                        if row and col_idx is not None:
-                            cols = row.locator('td')
-                            links = cols.nth(col_idx).locator('a[href*="downloadGNT"]')
-                            link_count = await links.count()
-                            
-                            # Nếu có 2 links thì click link thứ 2, nếu không thì click link đầu
-                            if link_count >= 2:
-                                download_link = links.nth(1)
-                            elif link_count >= 1:
-                                download_link = links.first
-                            else:
-                                logger.warning(f"No download link found for {id_gnt}")
-                                return
+        for retry in range(max_retries + 1):
+            try:
+                # Nếu đã có link_locator, dùng trực tiếp
+                if "link_locator" in item:
+                    download_link = item["link_locator"]
+                else:
+                    # Fallback: tìm lại link từ row và col_index
+                    row = item.get("row")
+                    col_idx = item.get("col_index")
+                    if row and col_idx is not None:
+                        cols = row.locator('td')
+                        links = cols.nth(col_idx).locator('a[href*="downloadGNT"]')
+                        link_count = await links.count()
+                        
+                        # Nếu có 2 links thì click link thứ 2, nếu không thì click link đầu
+                        if link_count >= 2:
+                            download_link = links.nth(1)
+                        elif link_count >= 1:
+                            download_link = links.first
                         else:
-                            logger.warning(f"Missing link_locator or row/col_index for {id_gnt}")
-                            return
-                    
-                    # Download file (sẽ được lưu tạm với tên mặc định)
-                    async with page.expect_download(timeout=30000) as download_info:
-                        await download_link.click()
-                    
-                    download = await download_info.value
-                    
-                    # Lưu file với tên tạm
-                    temp_name = f"chungtu_{id_gnt}_{name_r}.xml"
-                    name_r += 1
-                    save_path = os.path.join(temp_dir, temp_name)
-                    await download.save_as(save_path)
-                    
-                    # Đợi file được lưu xong
-                    await asyncio.sleep(0.3)
-                    
+                            logger.warning(f"No download link found for {id_gnt}")
+                            return False
+                    else:
+                        logger.warning(f"Missing link_locator or row/col_index for {id_gnt}")
+                        return False
+                
+                # Download file
+                async with page.expect_download(timeout=30000) as download_info:
+                    await download_link.click()
+                
+                download = await download_info.value
+                
+                # Lưu file với tên tạm unique
+                TaxCrawlerService._gnt_download_counter += 1
+                temp_name = f"chungtu_{id_gnt}_{TaxCrawlerService._gnt_download_counter}.xml"
+                save_path = os.path.join(temp_dir, temp_name)
+                await download.save_as(save_path)
+                
+                # Verify file exists and has content
+                await asyncio.sleep(0.3)
+                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
                     logger.info(f"Downloaded giaynoptien {id_gnt} -> {temp_name}")
-                except Exception as e:
-                    logger.warning(f"Error downloading {item.get('id', 'unknown')}: {e}")
+                    return True
+                else:
+                    raise Exception("File empty or not saved")
+                    
+            except Exception as e:
+                logger.warning(f"Error downloading giaynoptien {id_gnt} (attempt {retry + 1}/{max_retries + 1}): {e}")
+                if retry < max_retries:
+                    await asyncio.sleep(1)  # Wait before retry
         
-        await asyncio.gather(*[download_one(item) for item in download_queue], return_exceptions=True)
+        return False
     
     async def convert_xml_to_xlsx(self, xml_files_base64: str) -> Dict[str, Any]:
         """
@@ -1838,18 +2349,11 @@ class TaxCrawlerService:
         page = session.page
         
         try:
-            # Navigate đến trang tra cứu tờ khai
-            try:
-                await page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[8]').click(timeout=10000)
-            except:
-                try:
-                    await page.locator('//html/body/div[1]/div[2]/ul/li[3]').click(timeout=5000)
-                    await asyncio.sleep(0.5)
-                    await page.locator('//html/body/div[1]/div[3]/div/div[3]/ul/li[8]').click(timeout=10000)
-                except:
-                    return {"success": False, "error": "Không thể navigate đến trang tra cứu"}
+            # Navigate đến trang tra cứu tờ khai bằng JavaScript (nhanh hơn)
+            success = await self._navigate_to_tokhai_page(page, session.dse_session_id)
             
-            await asyncio.sleep(1)
+            if not success:
+                return {"success": False, "error": "Không thể navigate đến trang tra cứu. Vui lòng thử lại."}
             
             frame = page.frame('mainframe')
             if not frame:
@@ -1886,6 +2390,228 @@ class TaxCrawlerService:
         except Exception as e:
             logger.error(f"Error getting tokhai types: {e}")
             return {"success": False, "error": str(e)}
+    
+    async def crawl_batch(
+        self,
+        session_id: str,
+        start_date: str,
+        end_date: str,
+        crawl_types: List[str],
+        tokhai_type: str = "00"
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Crawl nhiều loại dữ liệu đồng thời (tờ khai, thông báo, giấy nộp tiền)
+        
+        Args:
+            session_id: Session ID đã đăng nhập
+            start_date: Ngày bắt đầu (dd/mm/yyyy)
+            end_date: Ngày kết thúc (dd/mm/yyyy)
+            crawl_types: Danh sách loại cần crawl ["tokhai", "thongbao", "giaynoptien"]
+            tokhai_type: Loại tờ khai (chỉ áp dụng nếu crawl tokhai)
+        
+        Yields:
+            Dict với progress và kết quả từng loại
+        """
+        session = self.session_manager.get_session(session_id)
+        if not session:
+            yield {"type": "error", "error": "Session not found"}
+            return
+        
+        if not session.is_logged_in:
+            yield {"type": "error", "error": "Not logged in"}
+            return
+        
+        # Validate crawl_types
+        valid_types = ["tokhai", "thongbao", "giaynoptien"]
+        crawl_types = [t for t in crawl_types if t in valid_types]
+        
+        if not crawl_types:
+            yield {"type": "error", "error": "Không có loại crawl hợp lệ. Chọn từ: tokhai, thongbao, giaynoptien"}
+            return
+        
+        total_types = len(crawl_types)
+        yield {
+            "type": "batch_start",
+            "message": f"Bắt đầu crawl {total_types} loại dữ liệu: {', '.join(crawl_types)}",
+            "crawl_types": crawl_types,
+            "total_types": total_types
+        }
+        
+        # Kết quả tổng hợp
+        batch_results = {
+            "tokhai": None,
+            "thongbao": None,
+            "giaynoptien": None
+        }
+        
+        # Xử lý từng loại tuần tự (vì cùng dùng 1 session/page)
+        for idx, crawl_type in enumerate(crawl_types):
+            yield {
+                "type": "batch_progress",
+                "current_type": crawl_type,
+                "type_index": idx + 1,
+                "total_types": total_types,
+                "message": f"Đang crawl {crawl_type} ({idx + 1}/{total_types})..."
+            }
+            
+            try:
+                if crawl_type == "tokhai":
+                    # Crawl tờ khai - thứ tự: session_id, tokhai_type, start_date, end_date
+                    async for result in self.crawl_tokhai(session_id, tokhai_type, start_date, end_date):
+                        # Forward progress events với prefix
+                        if result.get("type") == "complete":
+                            batch_results["tokhai"] = result
+                            yield {
+                                "type": "type_complete",
+                                "crawl_type": "tokhai",
+                                "result": result
+                            }
+                        elif result.get("type") == "zip_data":
+                            # Lưu zip_data vào batch_results
+                            if batch_results.get("tokhai"):
+                                batch_results["tokhai"]["zip_base64"] = result.get("zip_base64")
+                            # Forward event
+                            yield {
+                                **result,
+                                "crawl_type": "tokhai"
+                            }
+                        elif result.get("type") == "error":
+                            yield {
+                                "type": "type_error",
+                                "crawl_type": "tokhai",
+                                "error": result.get("error")
+                            }
+                        else:
+                            # Forward info/progress events
+                            yield {
+                                **result,
+                                "crawl_type": "tokhai"
+                            }
+                
+                elif crawl_type == "thongbao":
+                    # Crawl thông báo
+                    async for result in self.crawl_thongbao(session_id, start_date, end_date):
+                        if result.get("type") == "complete":
+                            batch_results["thongbao"] = result
+                            # Nếu có zip_base64 trong complete event, giữ lại
+                            yield {
+                                "type": "type_complete",
+                                "crawl_type": "thongbao",
+                                "result": result
+                            }
+                        elif result.get("type") == "zip_data":
+                            if batch_results.get("thongbao"):
+                                batch_results["thongbao"]["zip_base64"] = result.get("zip_base64")
+                            yield {
+                                **result,
+                                "crawl_type": "thongbao"
+                            }
+                        elif result.get("type") == "error":
+                            yield {
+                                "type": "type_error",
+                                "crawl_type": "thongbao",
+                                "error": result.get("error")
+                            }
+                        else:
+                            yield {
+                                **result,
+                                "crawl_type": "thongbao"
+                            }
+                
+                elif crawl_type == "giaynoptien":
+                    # Crawl giấy nộp tiền
+                    async for result in self.crawl_giay_nop_tien(session_id, start_date, end_date):
+                        if result.get("type") == "complete":
+                            batch_results["giaynoptien"] = result
+                            yield {
+                                "type": "type_complete",
+                                "crawl_type": "giaynoptien",
+                                "result": result
+                            }
+                        elif result.get("type") == "zip_data":
+                            if batch_results.get("giaynoptien"):
+                                batch_results["giaynoptien"]["zip_base64"] = result.get("zip_base64")
+                            yield {
+                                **result,
+                                "crawl_type": "giaynoptien"
+                            }
+                        elif result.get("type") == "error":
+                            yield {
+                                "type": "type_error",
+                                "crawl_type": "giaynoptien",
+                                "error": result.get("error")
+                            }
+                        else:
+                            yield {
+                                **result,
+                                "crawl_type": "giaynoptien"
+                            }
+                
+            except Exception as e:
+                logger.error(f"Error crawling {crawl_type}: {e}")
+                yield {
+                    "type": "type_error",
+                    "crawl_type": crawl_type,
+                    "error": str(e)
+                }
+        
+        # Tổng hợp kết quả cuối cùng
+        # Merge tất cả ZIP files thành 1 ZIP duy nhất
+        merged_zip_buffer = BytesIO()
+        total_files = 0
+        total_size = 0
+        all_results = []
+        
+        with zipfile.ZipFile(merged_zip_buffer, 'w', zipfile.ZIP_DEFLATED) as merged_zip:
+            for crawl_type, result in batch_results.items():
+                if result and result.get("zip_base64"):
+                    try:
+                        # Decode ZIP của từng loại
+                        type_zip_bytes = base64.b64decode(result["zip_base64"])
+                        type_zip_buffer = BytesIO(type_zip_bytes)
+                        
+                        with zipfile.ZipFile(type_zip_buffer, 'r') as type_zip:
+                            for file_info in type_zip.filelist:
+                                # Thêm prefix folder theo loại
+                                new_name = f"{crawl_type}/{file_info.filename}"
+                                file_data = type_zip.read(file_info.filename)
+                                merged_zip.writestr(new_name, file_data)
+                                total_files += 1
+                                total_size += len(file_data)
+                        
+                        # Collect results
+                        if result.get("results"):
+                            for r in result["results"]:
+                                r["crawl_type"] = crawl_type
+                                all_results.append(r)
+                    except Exception as e:
+                        logger.warning(f"Error merging ZIP for {crawl_type}: {e}")
+        
+        # Encode merged ZIP
+        merged_zip_base64 = base64.b64encode(merged_zip_buffer.getvalue()).decode('utf-8') if total_files > 0 else None
+        zip_filename = f"batch_crawl_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
+        
+        yield {
+            "type": "batch_complete",
+            "message": f"Hoàn thành crawl {total_types} loại dữ liệu",
+            "total_files": total_files,
+            "total_size": total_size,
+            "results": all_results,
+            "batch_results": {
+                crawl_type: {
+                    "total": result.get("total", 0) if result else 0,
+                    "files_count": result.get("files_count", 0) if result else 0,
+                    "total_size": result.get("total_size", 0) if result else 0,
+                    "zip_base64": result.get("zip_base64") if result else None,
+                    "zip_filename": result.get("zip_filename") if result else None,
+                    "results": result.get("results", []) if result else []
+                }
+                for crawl_type, result in batch_results.items()
+                if crawl_type in crawl_types
+            },
+            "zip_base64": merged_zip_base64,
+            "zip_filename": zip_filename
+        }
 
 
 # Singleton instance - sẽ được khởi tạo với session_manager

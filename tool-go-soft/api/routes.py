@@ -51,7 +51,7 @@ def check_session_exists(session_id: str) -> tuple[bool, dict]:
         return False, {
             "status": "error",
             "error_code": "MISSING_SESSION_ID",
-            "message": "Missing session_id"
+            "message": "Thiếu session_id. Vui lòng đăng nhập lại."
         }
     
     sm = get_session_manager()
@@ -61,7 +61,7 @@ def check_session_exists(session_id: str) -> tuple[bool, dict]:
         return False, {
             "status": "error",
             "error_code": "SESSION_NOT_FOUND",
-            "message": "Session not found or expired"
+            "message": "Session không tồn tại hoặc đã hết hạn. Vui lòng đăng nhập lại."
         }
     
     return True, None
@@ -285,14 +285,17 @@ def register_routes(app, prefix):
             password = data.get("password")
             captcha = data.get("captcha")
             
-            if not all([session_id, username, password, captcha]):
+            # Login mới không cần captcha nữa
+            if not all([session_id, username, password]):
                 return jsonify({
                     "status": "error",
                     "error_code": "MISSING_REQUIRED_FIELDS",
-                    "message": "Missing required fields: session_id, username, password, captcha"
+                    "message": "Missing required fields: session_id, username, password"
                 }), 400
             
             sm = get_session_manager()
+            # Login mới không cần captcha, gửi rỗng
+            captcha = captcha or ""
             result = await sm.submit_login(session_id, username, password, captcha)
             
             if result["success"]:

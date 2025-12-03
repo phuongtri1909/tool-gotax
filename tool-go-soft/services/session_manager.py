@@ -1,13 +1,3 @@
-"""
-Session Manager - Quản lý các session Playwright cho nhiều user đồng thời
-Đã migrate từ Selenium sang Playwright + httpx để tối ưu tốc độ
-
-Ưu điểm so với Selenium:
-- Async native - chạy song song dễ dàng
-- Nhanh hơn 2-3x
-- Auto-wait thông minh (không cần time.sleep())
-- RAM ít hơn
-"""
 import os
 import uuid
 import asyncio
@@ -28,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SessionData:
-    """Dữ liệu của một session"""
     session_id: str
     browser: Browser
     context: BrowserContext
@@ -46,13 +35,6 @@ class SessionData:
 
 
 class SessionManager:
-    """
-    Quản lý các session Playwright (Async)
-    - Tạo session mới với Chromium headless
-    - Theo dõi và cleanup session hết hạn
-    - Async-safe cho multi-user
-    - Lưu cookies để dùng với httpx sau khi login
-    """
     
     SESSION_TIMEOUT_MINUTES = 30
     CLEANUP_INTERVAL_SECONDS = 60
@@ -232,10 +214,6 @@ class SessionManager:
             return {"success": False, "error": str(e)}
     
     async def reload_captcha(self, session_id: str) -> Dict[str, Any]:
-        """
-        Reload captcha (giống init, chỉ fetch ImageServlet với timestamp mới)
-        Returns: {success, captcha_base64, error}
-        """
         return await self.init_login_page(session_id)
     
     async def _get_captcha_base64(self, page: Page) -> Optional[str]:
@@ -288,10 +266,6 @@ class SessionManager:
             return None
     
     async def submit_login(self, session_id: str, username: str, password: str, captcha: str) -> Dict[str, Any]:
-        """
-        Submit login với username, password và captcha (trang dichvucong)
-        Returns: {success, error, cookies, dse_session_id}
-        """
         session = self.get_session(session_id)
         if not session:
             return {"success": False, "error": "Session not found"}
@@ -545,10 +519,6 @@ class SessionManager:
             return {"success": False, "error": str(e)}
   
     async def get_cookies_for_httpx(self, session_id: str) -> Optional[Dict[str, str]]:
-        """
-        Lấy cookies để dùng với httpx client
-        Sau khi login, có thể dùng httpx để crawl nhanh hơn
-        """
         session = self.get_session(session_id)
         if not session or not session.is_logged_in:
             return None
@@ -560,10 +530,6 @@ class SessionManager:
         return session.cookies
     
     async def navigate_to_search(self, session_id: str, search_type: str = "tokhai") -> Dict[str, Any]:
-        """
-        Navigate đến trang tra cứu tương ứng
-        search_type: "tokhai", "thongbao", "giaynopthue"
-        """
         session = self.get_session(session_id)
         if not session:
             return {"success": False, "error": "Session not found"}
@@ -610,7 +576,6 @@ class SessionManager:
             return {"success": False, "error": str(e)}
     
     async def shutdown(self):
-        """Shutdown tất cả sessions và browser"""
         logger.info("Shutting down SessionManager...")
         
         # Cancel cleanup task

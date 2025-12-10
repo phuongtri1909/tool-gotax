@@ -503,7 +503,7 @@ class TaxCrawlerService:
         page = session.page
         
         try:
-            yield {"type": "info", "message": "Đang navigate đến trang tra cứu..."}
+            yield {"type": "info", "message": "Đang xử lý tờ khai..."}
             
             # Navigate đến trang tra cứu tờ khai bằng JavaScript (nhanh hơn click menu)
             success = await self._navigate_to_tokhai_page(page, session.dse_session_id)
@@ -730,7 +730,7 @@ class TaxCrawlerService:
         ssid = session.dse_session_id
         
         try:
-            yield {"type": "info", "message": "Đang navigate đến trang tra cứu..."}
+            yield {"type": "info", "message": "Đang xử lý tờ khai..."}
             
             # Bước 1: Gọi _navigate_to_tokhai_page để click vào link và lấy iframe src
             logger.info("Calling _navigate_to_tokhai_page to get iframe src...")
@@ -834,6 +834,7 @@ class TaxCrawlerService:
             
             total_count = 0
             results = []
+            accumulated_total_so_far = 0  # Tổng số file đã biết từ các khoảng trước
             
             yield {"type": "info", "message": f"Bắt đầu crawl {len(date_ranges)} khoảng thời gian..."}
             
@@ -866,8 +867,13 @@ class TaxCrawlerService:
                     
                     await asyncio.sleep(2)
                     
-                    # Xử lý pagination
+                    # Bước 1: Collect tất cả items từ tất cả các trang trước
+                    download_queue = []  # Queue để batch download (collect từ tất cả trang)
+                    yield {"type": "info", "message": f"Đang thu thập danh sách tờ khai từ khoảng {date_range[0]} - {date_range[1]}..."}
+                    
+                    # Xử lý pagination - collect tất cả items
                     check_pages = True
+                    page_number = 1
                     while check_pages:
                         # Tìm bảng kết quả - theo HTML thực tế
                         # Bảng: #data_content_onday hoặc table.md_list2
@@ -876,15 +882,15 @@ class TaxCrawlerService:
                             table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
                             await table_body.wait_for(timeout=5000)
                         except:
-                            yield {"type": "info", "message": f"Không có dữ liệu trong khoảng {date_range[0]} - {date_range[1]}"}
+                            if page_number == 1:
+                                yield {"type": "info", "message": f"Không có dữ liệu trong khoảng {date_range[0]} - {date_range[1]}"}
                             break
                         
                         rows = table_body.locator('tr')
                         row_count = await rows.count()
                         
-                        yield {"type": "progress", "current": total_count, "message": f"Đang xử lý {row_count} tờ khai (trang hiện tại)..."}
+                        yield {"type": "progress", "current": len(download_queue), "message": f"Đang thu thập trang {page_number} ({row_count} tờ khai)..."}
                         
-                        download_queue = []  # Queue để batch download
                         page_valid_count = 0  # Đếm số items hợp lệ trong trang này
                         
                         for i in range(row_count):
@@ -900,15 +906,61 @@ class TaxCrawlerService:
                                 id_tk = await cols.nth(1).text_content()
                                 id_tk = id_tk.strip() if id_tk else ""
                                 
-                                if len(id_tk) < 4:
+                                # Cột 2: Tờ khai/Phụ lục
+                                name_tk = await cols.nth(2).text_content() if col_count > 2 else ""
+                                
+                                # Check xem có link download trong cột 2 (có thể là downloadTkhai hoặc downloadBke)
+                                download_type = None  # "downloadTkhai", "downloadBke", hoặc None
+                                has_link = False
+                                extracted_id = None
+                                
+                                try:
+                                    col2 = cols.nth(2)
+                                    download_link = col2.locator('a')
+                                    link_count = await download_link.count()
+                                    
+                                    if link_count > 0:
+                                        first_link = download_link.first
+                                        onclick = await first_link.get_attribute('onclick')
+                                        title = await first_link.get_attribute('title')
+                                        
+                                        # Check downloadBke (file thuyết minh)
+                                        if onclick and 'downloadBke' in onclick:
+                                            download_type = "downloadBke"
+                                            has_link = True
+                                            # Extract ID từ downloadBke('ID')
+                                            match = re.search(r"downloadBke\(['\"]?(\d+)['\"]?\)", onclick)
+                                            if match:
+                                                extracted_id = match.group(1)
+                                                # Nếu cột 1 rỗng, dùng ID từ onclick
+                                                if not id_tk or len(id_tk) < 4:
+                                                    id_tk = extracted_id
+                                        # Check downloadTkhai (tờ khai thông thường)
+                                        elif onclick and 'downloadTkhai' in onclick:
+                                            download_type = "downloadTkhai"
+                                            has_link = True
+                                            # Extract ID từ downloadTkhai('ID')
+                                            match = re.search(r"downloadTkhai\(['\"]?(\d+)['\"]?\)", onclick)
+                                            if match:
+                                                extracted_id = match.group(1)
+                                        # Fallback: check title
+                                        elif title and 'Tải tệp' in title:
+                                            has_link = True
+                                            download_type = "downloadTkhai"  # Mặc định
+                                        
+                                        logger.info(f"Row {id_tk}: download_type={download_type}, has_link={has_link}, onclick={onclick[:50] if onclick else None}")
+                                except Exception as e:
+                                    logger.debug(f"Error checking link: {e}")
+                                    has_link = False
+                                
+                                # Nếu không có ID hợp lệ và không có link download, skip
+                                if (not id_tk or len(id_tk) < 4) and not has_link:
                                     continue
                                 
                                 # Chỉ đếm khi item hợp lệ
                                 page_valid_count += 1
                                 
                                 # Extract thông tin theo đúng cấu trúc HTML
-                                # Cột 2: Tờ khai/Phụ lục
-                                name_tk = await cols.nth(2).text_content() if col_count > 2 else ""
                                 # Cột 3: Kỳ tính thuế  
                                 ky_tinh_thue = await cols.nth(3).text_content() if col_count > 3 else ""
                                 # Cột 4: Loại tờ khai (Chính thức/Bổ sung)
@@ -945,31 +997,6 @@ class TaxCrawlerService:
                                 file_name = self._remove_accents(file_name)
                                 file_name = file_name.replace("/", "_").replace(":", "_").replace("\\", "_")
                                 
-                                # QUAN TRỌNG: Check xem có link download trong cột 2
-                                # Link download phải có onclick="downloadTkhai(...)" hoặc title="Tải tệp tờ khai về"
-                                has_link = False
-                                try:
-                                    col2 = cols.nth(2)
-                                    download_link = col2.locator('a')
-                                    link_count = await download_link.count()
-                                    
-                                    if link_count > 0:
-                                        # Kiểm tra link có onclick="downloadTkhai" (link download thực sự)
-                                        first_link = download_link.first
-                                        onclick = await first_link.get_attribute('onclick')
-                                        title = await first_link.get_attribute('title')
-                                        
-                                        # Link download phải có onclick chứa "downloadTkhai" hoặc title="Tải tệp tờ khai về"
-                                        if onclick and 'downloadTkhai' in onclick:
-                                            has_link = True
-                                        elif title and 'Tải tệp' in title:
-                                            has_link = True
-                                        
-                                        logger.info(f"Row {id_tk}: has_link={has_link}, onclick={onclick[:50] if onclick else None}, title={title}")
-                                except Exception as e:
-                                    logger.debug(f"Error checking link for {id_tk}: {e}")
-                                    has_link = False
-                                
                                 download_info = {
                                     "id": id_tk,
                                     "name": name_tk_normalized,
@@ -981,9 +1008,8 @@ class TaxCrawlerService:
                                     "noi_nop": noi_nop.strip() if noi_nop else "",
                                     "trang_thai": status,
                                     "file_name": file_name,
-                                    "cols": cols,
-                                    "row_index": i,
-                                    "has_link": has_link  # Đánh dấu có link hay không
+                                    "has_link": has_link,
+                                    "download_type": download_type  # "downloadTkhai", "downloadBke", hoặc None
                                 }
                                 download_queue.append(download_info)
                                 
@@ -991,45 +1017,90 @@ class TaxCrawlerService:
                                 logger.error(f"Error processing row: {e}")
                                 continue
                         
-                        # Batch download - tối ưu tốc độ (download 5 file cùng lúc)
-                        if download_queue:
-                            yield {"type": "info", "message": f"Đang download {len(download_queue)} file..."}
-                            successful_downloads = await self._batch_download(session, download_queue, temp_dir, ssid, frame)
-                            
-                            for item in successful_downloads:
-                                result = {
-                                    "id": item["id"],
-                                    "name": item["name"],
-                                    "ky_tinh_thue": item["ky_tinh_thue"],
-                                    "loai": item["loai"],
-                                    "lan_nop": item["lan_nop"],
-                                    "lan_bo_sung": item["lan_bo_sung"],
-                                    "ngay_nop": item["ngay_nop"],
-                                    "noi_nop": item["noi_nop"],
-                                    "trang_thai": item["trang_thai"],
-                                    "file_name": item["file_name"] + ".xml"
-                                }
-                                results.append(result)
-                                yield {"type": "item", "data": result}
-                            
-                            # Chỉ đếm những file download thành công
-                            total_count += len(successful_downloads)
-                            
-                            download_queue = []
-                        else:
-                            # Nếu không có gì để download, không đếm
-                            pass
-                        
                         # Check pagination - next page
                         try:
                             next_btn = frame.locator('img[src="/etaxnnt/static/images/pagination_right.gif"]')
                             if await next_btn.count() > 0:
                                 await next_btn.click()
                                 await asyncio.sleep(1)
+                                page_number += 1
                             else:
                                 check_pages = False
                         except:
                             check_pages = False
+                    
+                    # Bước 2: Sau khi collect xong tất cả, bắt đầu download
+                    if download_queue:
+                        total_files_in_queue = len(download_queue)
+                        yield {"type": "info", "message": f"Đã thu thập {total_files_in_queue} tờ khai. Bắt đầu download..."}
+                        
+                        # Cập nhật tổng tích lũy: cộng thêm số file của khoảng này
+                        accumulated_total_so_far += total_files_in_queue
+                        
+                        yield {
+                            "type": "download_start",
+                            "total_to_download": total_files_in_queue,
+                            "date_range": f"{date_range[0]} - {date_range[1]}",
+                            "range_index": range_idx + 1,
+                            "total_ranges": len(date_ranges),
+                            "accumulated_total": accumulated_total_so_far,  # Tổng tích lũy từ tất cả các khoảng đã biết
+                            "accumulated_downloaded": total_count  # Số đã download từ các lần trước
+                        }
+                        
+                        # Download với progress tracking
+                        downloaded_count = 0
+                        successful_downloads = []
+                        
+                        # Download tất cả song song (max 5 cùng lúc) với progress tracking
+                        semaphore = asyncio.Semaphore(5)
+                        async def download_one(item):
+                            async with semaphore:
+                                return await self._batch_download_one(session, item, temp_dir, ssid, frame, session_id)
+                        
+                        # Download và track progress
+                        download_tasks = [download_one(item) for item in download_queue]
+                        
+                        # Process downloads as they complete
+                        for coro in asyncio.as_completed(download_tasks):
+                            result = await coro
+                            if result:
+                                downloaded_count += 1
+                                successful_downloads.append(result)
+                                # Yield progress
+                                yield {
+                                    "type": "download_progress",
+                                    "downloaded": downloaded_count,
+                                    "total": total_files_in_queue,
+                                    "percent": int((downloaded_count / total_files_in_queue) * 100) if total_files_in_queue > 0 else 0,
+                                    "date_range": f"{date_range[0]} - {date_range[1]}",
+                                    "range_index": range_idx + 1,
+                                    "total_ranges": len(date_ranges),
+                                    "accumulated_downloaded": total_count + downloaded_count,
+                                    "accumulated_total": accumulated_total_so_far
+                                }
+                        
+                        # Yield items
+                        for item in successful_downloads:
+                            result = {
+                                "id": item["id"],
+                                "name": item["name"],
+                                "ky_tinh_thue": item["ky_tinh_thue"],
+                                "loai": item["loai"],
+                                "lan_nop": item["lan_nop"],
+                                "lan_bo_sung": item["lan_bo_sung"],
+                                "ngay_nop": item["ngay_nop"],
+                                "noi_nop": item["noi_nop"],
+                                "trang_thai": item["trang_thai"],
+                                "file_name": item["file_name"] + ".xml"
+                            }
+                            results.append(result)
+                            yield {"type": "item", "data": result}
+                        
+                        # Chỉ đếm những file download thành công
+                        total_count += len(successful_downloads)
+                    else:
+                        # Nếu không có gì để download, không đếm
+                        pass
                 
                 except Exception as e:
                     logger.error(f"Error processing date range {date_range}: {e}")
@@ -1107,7 +1178,260 @@ class TaxCrawlerService:
         except:
             return text
     
-    async def _batch_download(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame):
+    async def _batch_download_one(self, session: SessionData, item: Dict, temp_dir: str, ssid: str, frame, session_id: str = None) -> Optional[Dict]:
+        """Download một item và trả về item nếu thành công"""
+        try:
+            id_tk = item["id"]
+            file_name = item["file_name"]
+            has_link = item.get("has_link", False)
+            download_type = item.get("download_type")
+            
+            page = session.page
+            
+            # Lấy session ID và processor ID từ form (cần cho cả 2 loại)
+            current_ssid = ssid
+            if not current_ssid or current_ssid == "NotFound":
+                try:
+                    dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
+                    if await dse_session_input.count() > 0:
+                        current_ssid = await dse_session_input.get_attribute('value') or ""
+                except:
+                    pass
+            
+            if not current_ssid or current_ssid == "NotFound":
+                try:
+                    frame_url = frame.url
+                    match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
+                    if match:
+                        current_ssid = match.group(1)
+                except:
+                    pass
+            
+            dse_processor_id = ""
+            if current_ssid and current_ssid != "NotFound":
+                try:
+                    processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
+                    if await processor_id_input.count() > 0:
+                        dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
+                except:
+                    pass
+            
+            if has_link and current_ssid and current_ssid != "NotFound":
+                # Tờ khai có link - build URL từ id_tk
+                if download_type == "downloadBke":
+                    # File thuyết minh - dùng downloadBke
+                    if dse_processor_id:
+                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downBke&messageId={id_tk}"
+                    else:
+                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downBke&messageId={id_tk}"
+                else:
+                    # Tờ khai thông thường - dùng downloadTkhai
+                    if dse_processor_id:
+                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
+                    else:
+                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
+                
+                # Download bằng new_page.goto()
+                new_page = None
+                try:
+                    new_page = await session.context.new_page()
+                    new_page.set_default_timeout(30000)
+                    
+                    download_occurred = False
+                    response_data = None
+                    
+                    async def handle_response(response):
+                        nonlocal download_occurred, response_data
+                        content_type = response.headers.get('content-type', '').lower()
+                        if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
+                            download_occurred = True
+                            response_data = await response.body()
+                        elif 'xlsx' in content_type or response.url.endswith('.xlsx') or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
+                            download_occurred = True
+                            response_data = await response.body()
+                    
+                    new_page.on("response", handle_response)
+                    response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
+                    await asyncio.sleep(1)
+                    
+                    if download_occurred and response_data:
+                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
+                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
+                        with open(save_path, 'wb') as f:
+                            f.write(response_data)
+                        
+                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                            logger.info(f"Downloaded {id_tk} ({download_type}) -> {file_name}")
+                            return item
+                    else:
+                        try:
+                            async with new_page.expect_download(timeout=5000) as download_info:
+                                await new_page.reload(wait_until="domcontentloaded")
+                            
+                            download = await download_info.value
+                            file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
+                            save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
+                            await download.save_as(save_path)
+                            
+                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                logger.info(f"Downloaded {id_tk} ({download_type}) via download event -> {file_name}")
+                                return item
+                        except:
+                            if response:
+                                content = await response.body()
+                                if content and len(content) > 100:
+                                    file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
+                                    save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
+                                    with open(save_path, 'wb') as f:
+                                        f.write(content)
+                                    
+                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                        logger.info(f"Downloaded {id_tk} ({download_type}) from response body -> {file_name}")
+                                        return item
+                except Exception as e2:
+                    logger.warning(f"Error downloading {id_tk} via new_page.goto(): {e2}")
+                    if session_id:
+                        try:
+                            http_client = await self._get_http_client(session_id)
+                            if http_client:
+                                response = await http_client.get(download_url, timeout=30.0)
+                                if response.status_code == 200:
+                                    content = response.content
+                                    if content and len(content) > 100:
+                                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
+                                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
+                                        with open(save_path, 'wb') as f:
+                                            f.write(content)
+                                        
+                                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                            logger.info(f"Downloaded {id_tk} ({download_type}) via httpx -> {file_name}")
+                                            return item
+                        except:
+                            pass
+                finally:
+                    if new_page:
+                        try:
+                            await new_page.close()
+                        except:
+                            pass
+                return None
+            elif current_ssid and current_ssid != "NotFound":
+                # Special tokhai - không có link
+                # Special tokhai - same logic as before
+                current_ssid = ssid
+                
+                if not current_ssid or current_ssid == "NotFound":
+                    try:
+                        dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
+                        if await dse_session_input.count() > 0:
+                            current_ssid = await dse_session_input.get_attribute('value') or ""
+                    except:
+                        pass
+                
+                if not current_ssid or current_ssid == "NotFound":
+                    try:
+                        frame_url = frame.url
+                        match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
+                        if match:
+                            current_ssid = match.group(1)
+                    except:
+                        pass
+                
+                if current_ssid and current_ssid != "NotFound":
+                    dse_processor_id = ""
+                    try:
+                        processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
+                        if await processor_id_input.count() > 0:
+                            dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
+                    except:
+                        pass
+                    
+                    if dse_processor_id:
+                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
+                    else:
+                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
+                    
+                    new_page = None
+                    try:
+                        new_page = await session.context.new_page()
+                        new_page.set_default_timeout(30000)
+                        
+                        download_occurred = False
+                        response_data = None
+                        
+                        async def handle_response(response):
+                            nonlocal download_occurred, response_data
+                            content_type = response.headers.get('content-type', '').lower()
+                            if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
+                                download_occurred = True
+                                response_data = await response.body()
+                        
+                        new_page.on("response", handle_response)
+                        response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
+                        await asyncio.sleep(1)
+                        
+                        if download_occurred and response_data:
+                            save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                            with open(save_path, 'wb') as f:
+                                f.write(response_data)
+                            
+                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
+                                return item
+                        else:
+                            try:
+                                async with new_page.expect_download(timeout=5000) as download_info:
+                                    await new_page.reload(wait_until="domcontentloaded")
+                                
+                                download = await download_info.value
+                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                await download.save_as(save_path)
+                                
+                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                    logger.info(f"Downloaded special (no link) {id_tk} via download event -> {file_name}")
+                                    return item
+                            except:
+                                if response:
+                                    content = await response.body()
+                                    if content and len(content) > 100:
+                                        save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                        with open(save_path, 'wb') as f:
+                                            f.write(content)
+                                        
+                                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                            logger.info(f"Downloaded special (no link) {id_tk} from response body -> {file_name}")
+                                            return item
+                    except Exception as e2:
+                        logger.warning(f"Error downloading special {id_tk}: {e2}")
+                        if session_id:
+                            try:
+                                http_client = await self._get_http_client(session_id)
+                                if http_client:
+                                    response = await http_client.get(download_url, timeout=30.0)
+                                    if response.status_code == 200:
+                                        content = response.content
+                                        if content and len(content) > 100:
+                                            save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                            with open(save_path, 'wb') as f:
+                                                f.write(content)
+                                            
+                                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                                logger.info(f"Downloaded special (no link) {id_tk} via httpx -> {file_name}")
+                                                return item
+                            except:
+                                pass
+                    finally:
+                        if new_page:
+                            try:
+                                await new_page.close()
+                            except:
+                                pass
+                return None
+        except Exception as e:
+            logger.warning(f"Error downloading {item.get('id', 'unknown')}: {e}")
+            return None
+    
+    async def _batch_download(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame, session_id: str = None):
         """
         Download nhiều file song song (tối ưu tốc độ)
         Limit concurrent downloads = 5 để không quá tải
@@ -1124,7 +1448,8 @@ class TaxCrawlerService:
                     id_tk = item["id"]
                     file_name = item["file_name"]
                     cols = item["cols"]
-                    has_link = item.get("has_link", False)  # Lấy từ item (đã check trước)
+                    has_link = item.get("has_link", False)
+                    download_type = item.get("download_type")  # "downloadTkhai", "downloadBke", hoặc None
                     
                     if has_link:
                         # Có link - click để download (bình thường)
@@ -1134,22 +1459,26 @@ class TaxCrawlerService:
                             await download_link.first.click()
                         
                         download = await download_info.value
-                        save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                        # File thuyết minh có thể là .xlsx, còn tờ khai thường là .xml
+                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
+                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
                         await download.save_as(save_path)
                         
                         # Kiểm tra file đã được lưu thành công
                         if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                            logger.info(f"Downloaded {id_tk} -> {file_name}")
+                            logger.info(f"Downloaded {id_tk} ({download_type}) -> {file_name}")
                             successful_downloads.append(item)
                         else:
                             logger.warning(f"Download failed: File not saved or empty for {id_tk}")
                     else:
                         # Tờ khai đặc biệt - không có link <a> download (không có onclick="downloadTkhai" hoặc title="Tải tệp")
-                        # Dùng URL trực tiếp với dse_pageId=14 và messageId={id_tk}
-                        logger.info(f"Special tokhai (no download link) detected: {id_tk}, using manual download method")
+                        # Hàm downloadTkhai(msgId) dùng window.location.href để navigate, không trigger download event trên page
+                        # Nên cần build URL và dùng new_page.goto() để trigger download event
+                        logger.info(f"Special tokhai (no download link) detected: {id_tk}, building download URL")
+                        
                         current_ssid = ssid
                         
-                        # Ưu tiên 1: Lấy từ input hidden trong form traCuuKhaiForm
+                        # Lấy session ID từ form
                         if not current_ssid or current_ssid == "NotFound":
                             try:
                                 dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
@@ -1160,10 +1489,9 @@ class TaxCrawlerService:
                             except Exception as e:
                                 logger.warning(f"Error getting dse_sessionId from form input: {e}")
                         
-                        # Ưu tiên 2: Lấy từ frame URL
+                        # Lấy từ frame URL nếu chưa có
                         if not current_ssid or current_ssid == "NotFound":
                             try:
-                                # Lấy từ frame URL
                                 frame_url = frame.url
                                 match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
                                 if match:
@@ -1172,26 +1500,8 @@ class TaxCrawlerService:
                             except Exception as e:
                                 logger.warning(f"Error getting dse_sessionId from frame URL: {e}")
                         
-                        # Fallback: Lấy từ performance logs (giống code cũ)
-                        if not current_ssid or current_ssid == "NotFound":
-                            try:
-                                # Lấy từ performance logs
-                                performance_logs = await page.evaluate("""
-                                    () => {
-                                        return window.performance.getEntriesByType('resource').map(entry => entry.name);
-                                    }
-                                """)
-                                
-                                for url in performance_logs:
-                                    match = re.search(r"[&?]dse_sessionId=([^&]+)", url)
-                                    if match:
-                                        current_ssid = match.group(1)
-                                        logger.info(f"Retrieved dse_sessionId from performance log: {current_ssid[:30]}...")
-                                        break
-                            except Exception as e:
-                                logger.warning(f"Error getting dse_sessionId from performance logs: {e}")
-                        
                         if current_ssid and current_ssid != "NotFound":
+                            # Lấy processor ID từ form
                             dse_processor_id = ""
                             try:
                                 processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
@@ -1202,49 +1512,122 @@ class TaxCrawlerService:
                             except:
                                 pass
                             
+                            # Build URL giống như hàm downloadTkhai() làm
+                            # downloadTkhai() làm: window.location.href='/etaxnnt/Request?dse_sessionId=...&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId=...&dse_nextEventName=downTkhai&messageId='+msgId
                             if dse_processor_id:
-                                download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=10&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
+                                # Có processor ID: dùng pageId=10 (hoặc có thể là 8 như trong HTML mẫu)
+                                download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
                             else:
+                                # Không có processor ID: dùng pageId=14
                                 download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
                             
-                            logger.info(f"Downloading special (no link) {id_tk} via window.open: {download_url[:100]}...")
+                            logger.info(f"Downloading special (no link) {id_tk} via new_page.goto(): {download_url[:100]}...")
                             
+                            new_page = None
                             try:
-                                async with page.expect_download(timeout=30000) as download_info:
-                                    await frame.evaluate(f"window.open('{download_url}', '_blank');")
+                                new_page = await session.context.new_page()
+                                new_page.set_default_timeout(30000)
                                 
-                                await asyncio.sleep(0.5)
+                                # Intercept response để bắt file download
+                                download_occurred = False
+                                response_data = None
                                 
-                                download = await download_info.value
-                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                await download.save_as(save_path)
+                                async def handle_response(response):
+                                    nonlocal download_occurred, response_data
+                                    content_type = response.headers.get('content-type', '').lower()
+                                    # Kiểm tra nếu response là XML file
+                                    if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
+                                        download_occurred = True
+                                        response_data = await response.body()
+                                        logger.info(f"Got XML response for {id_tk}, size: {len(response_data)} bytes")
                                 
-                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                    logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
-                                    successful_downloads.append(item)
+                                new_page.on("response", handle_response)
+                                
+                                # Navigate đến URL
+                                response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
+                                
+                                # Chờ một chút để response được xử lý
+                                await asyncio.sleep(1)
+                                
+                                # Nếu có download event, bắt nó
+                                if download_occurred and response_data:
+                                    save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                    with open(save_path, 'wb') as f:
+                                        f.write(response_data)
+                                    
+                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                        logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
+                                        successful_downloads.append(item)
+                                    else:
+                                        logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
                                 else:
-                                    logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
-                            except Exception as e2:
-                                logger.warning(f"Error downloading special {id_tk} via window.open: {e2}, trying new_page fallback...")
-                                try:
-                                    new_page = await session.context.new_page()
+                                    # Fallback: thử bắt download event
                                     try:
-                                        async with new_page.expect_download(timeout=30000) as download_info:
-                                            await new_page.goto(download_url)
+                                        async with new_page.expect_download(timeout=5000) as download_info:
+                                            # Trigger download bằng cách click hoặc navigate lại
+                                            await new_page.reload(wait_until="domcontentloaded")
                                         
                                         download = await download_info.value
                                         save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
                                         await download.save_as(save_path)
                                         
                                         if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                            logger.info(f"Downloaded special (no link) {id_tk} via fallback -> {file_name}")
+                                            logger.info(f"Downloaded special (no link) {id_tk} via download event -> {file_name}")
                                             successful_downloads.append(item)
                                         else:
-                                            logger.warning(f"Fallback download failed: File not saved or empty for {id_tk}")
-                                    finally:
+                                            logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
+                                    except:
+                                        # Nếu không có download event, thử lấy content từ response
+                                        if response:
+                                            content = await response.body()
+                                            if content and len(content) > 100:  # Có thể là XML file
+                                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                                with open(save_path, 'wb') as f:
+                                                    f.write(content)
+                                                
+                                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                                    logger.info(f"Downloaded special (no link) {id_tk} from response body -> {file_name}")
+                                                    successful_downloads.append(item)
+                                                else:
+                                                    logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
+                                            else:
+                                                logger.warning(f"No valid content in response for {id_tk}")
+                                        else:
+                                            logger.warning(f"No response received for {id_tk}")
+                            except Exception as e2:
+                                logger.warning(f"Error downloading special {id_tk} via new_page.goto(): {e2}")
+                                
+                                # Fallback: thử dùng httpx client với cookies
+                                if session_id:
+                                    try:
+                                        logger.info(f"Trying httpx fallback for {id_tk}")
+                                        http_client = await self._get_http_client(session_id)
+                                        if http_client:
+                                            response = await http_client.get(download_url, timeout=30.0)
+                                            if response.status_code == 200:
+                                                content = response.content
+                                                if content and len(content) > 100:
+                                                    save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                                    with open(save_path, 'wb') as f:
+                                                        f.write(content)
+                                                    
+                                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                                        logger.info(f"Downloaded special (no link) {id_tk} via httpx -> {file_name}")
+                                                        successful_downloads.append(item)
+                                                    else:
+                                                        logger.warning(f"httpx download failed: File not saved or empty for {id_tk}")
+                                                else:
+                                                    logger.warning(f"httpx response has no valid content for {id_tk}")
+                                            else:
+                                                logger.warning(f"httpx response status {response.status_code} for {id_tk}")
+                                    except Exception as e3:
+                                        logger.warning(f"httpx fallback also failed for {id_tk}: {e3}")
+                            finally:
+                                if new_page:
+                                    try:
                                         await new_page.close()
-                                except Exception as e3:
-                                    logger.error(f"Fallback download also failed for {id_tk}: {e3}")
+                                    except:
+                                        pass
                         else:
                             logger.warning(f"No valid session ID for special download: {id_tk}. ssid={ssid}")
                 except Exception as e:
@@ -1761,7 +2144,7 @@ class TaxCrawlerService:
         ssid = session.dse_session_id
         
         try:
-            yield {"type": "info", "message": "Đang navigate đến trang tra cứu giấy nộp thuế..."}
+            yield {"type": "info", "message": "Đang xử lý giấy nộp tiền..."}
             
             # Navigate đến trang giấy nộp tiền qua connectSSO (giống tờ khai)
             success = await self._navigate_to_giaynoptien_page(page, ssid)

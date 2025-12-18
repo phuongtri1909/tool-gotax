@@ -235,18 +235,18 @@ async def save_job_result(redis_client, job_id, total_count, results, zip_base64
     Lưu kết quả job vào Redis - chỉ lưu download_id, client sẽ download trực tiếp từ API server
     """
     try:
-                result_data = {
-                    'total': total_count,
-                    'results': results,
-                    'zip_filename': zip_filename
-                }
-                
+        result_data = {
+            'total': total_count,
+            'results': results,
+            'zip_filename': zip_filename
+        }
+        
         if download_id:
             result_data['download_id'] = download_id
         
         redis_client.set(f"job:{job_id}:result", json.dumps(result_data, ensure_ascii=False).encode('utf-8'))
         redis_client.set(f"job:{job_id}:status", "completed".encode('utf-8'))
-                publish_progress(job_id, 100, "Hoàn thành!")
+        publish_progress(job_id, 100, "Hoàn thành!")
         logger.info(f"[Job {job_id}] Đã lưu kết quả: {total_count} file")
     except Exception as e:
         logger.error(f"[Job {job_id}] Lỗi khi lưu kết quả: {e}")
@@ -277,9 +277,9 @@ async def worker_loop(redis_client, semaphore, max_concurrent=3):
                 try:
                     # Use asyncio.to_thread to run blocking Redis operation
                     result = await asyncio.to_thread(redis_client.blpop, [QUEUE_GO_SOFT], timeout=1)
-            
-            if result:
-                queue_name, job_data_json = result
+                    
+                    if result:
+                        queue_name, job_data_json = result
                         logger.info(f"Received job from queue: {queue_name}")
                         
                         # Decode bytes to string if needed
@@ -289,7 +289,7 @@ async def worker_loop(redis_client, semaphore, max_concurrent=3):
                         logger.info(f"Job data (raw): {job_data_json[:200]}...")  # Log first 200 chars
                         
                         try:
-                job_data = json.loads(job_data_json)
+                            job_data = json.loads(job_data_json)
                             job_id = job_data.get('job_id')
                             logger.info(f"Job data parsed successfully. Job ID: {job_id}")
                         except json.JSONDecodeError as e:
@@ -298,7 +298,7 @@ async def worker_loop(redis_client, semaphore, max_concurrent=3):
                             continue
                         
                         logger.info(f"Processing job: {job_id}")
-                
+                        
                         # Create async task for this job (runs concurrently)
                         async def process_with_semaphore():
                             async with semaphore:  # Limit concurrent jobs

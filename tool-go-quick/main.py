@@ -18,11 +18,18 @@ import subprocess
 import sys
 import uuid
 import threading
+import torch
+
+_original_torch_load = torch.load
+def _patched_torch_load(*args, **kwargs):
+    if 'weights_only' not in kwargs:
+        kwargs['weights_only'] = False
+    return _original_torch_load(*args, **kwargs)
+torch.load = _patched_torch_load
 
 try:
         import vietocr
 except ImportError:
-        print("❌ VietOCR chưa được cài. Đang tiến hành cài đặt...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "vietocr"])
 def count_files( folderPath):
         """ Đếm số file trong thư mục """
@@ -30,7 +37,7 @@ def count_files( folderPath):
 import shutil
 
 class DetectWorker():
-    def __init__(self,input_path:str = None,type_:int = 0, cached_models=None):
+    def __init__(self,input_path:str = None,type_:int = 0, cached_models=None, job_id=None, total_cccd=0):
         super().__init__()
         self.path_img = input_path
         self.path_rs = None
@@ -44,9 +51,38 @@ class DetectWorker():
         self.model2 = None
         self.model3 = None
         self.vietocr_detector = None
+        # Tổng số CCCD (mỗi CCCD = 2 ảnh: mt + ms)
+        self.total_cccd = total_cccd
+        # Job ID để publish progress
+        self.job_id = job_id
         # Tạo unique session ID cho mỗi request để tránh conflict khi chạy đồng thời
         self.session_id = str(uuid.uuid4())[:8]
         self.work_dir = os.path.join(self.base_dir, f"work_{self.session_id}")
+        
+        # Import is_job_cancelled function
+        self.is_job_cancelled_func = None
+        if self.job_id:
+            try:
+                import sys
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                from shared.redis_client import is_job_cancelled
+                self.is_job_cancelled_func = is_job_cancelled
+            except Exception as e:
+                pass
+    
+    def check_cancellation(self):
+        """Check if job has been cancelled. Raise exception if cancelled."""
+        if self.job_id and self.is_job_cancelled_func:
+            try:
+                if self.is_job_cancelled_func(self.job_id):
+                    raise Exception("Job đã bị hủy")
+            except Exception as e:
+                if "đã bị hủy" in str(e):
+                    raise
+                # Ignore other errors (Redis connection issues, etc.)
+                pass
         
     def init_temp_dirs(self):
         """Create temporary directories với unique session ID"""
@@ -146,10 +182,14 @@ class DetectWorker():
             result_bytes = output_zip.getvalue()
             result_b64 = base64.b64encode(result_bytes).decode("ascii")
             
+            # Tính tổng số CCCD: mỗi CCCD = 2 ảnh (mt + ms)
+            total_cccd = total_images // 2
+            
             return {
                 "status": "success",
                 "message": "Chuyển PDF → PNG và đóng gói ZIP thành công.",
                 "total_images": total_images,
+                "total_cccd": total_cccd,
                 "zip_name": "images.zip",
                 "zip_base64": result_b64
             }
@@ -281,11 +321,15 @@ class DetectWorker():
             zip_bytes = mem_zip.getvalue()
             zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
 
+            # Tính tổng số CCCD: total_rows = số CCCD (mỗi dòng Excel = 1 CCCD)
+            total_cccd = len(lines_excel)
+            
             return {
                 "status": "success",
                 "message": "Đã tải ảnh từ Excel và đóng gói ZIP thành công.",
                 "total_rows": len(lines_excel),
                 "total_images": total_images,
+                "total_cccd": total_cccd,
                 "zip_name": "excel_images.zip",
                 "zip_base64": zip_b64
             }
@@ -306,6 +350,7 @@ class DetectWorker():
                 except Exception as e:
                     print(f"Lỗi khi xóa {file_name}: {e}")
     def collect_cus_info(self):
+        print("4.Collect customer info")
         import os
         folder_txt = self.work_temp_rs
         all_files = [f for f in os.listdir(folder_txt) if f.endswith('.txt')]
@@ -342,7 +387,30 @@ class DetectWorker():
         # Duyệt file KHÔNG chứa mt/ms (tức là file gộp + file lẻ khác)
         final_files = [f for f in os.listdir(folder_txt) if f.endswith('.txt') and not f.endswith('mt.txt') and not f.endswith('ms.txt')]
         info_list = {"customer": []}
+        
+        # Import publish_progress nếu có job_id
+        publish_progress_func = None
+        if self.job_id:
+            try:
+                # Import từ shared.redis_client
+                import sys
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                from shared.redis_client import publish_progress
+                publish_progress_func = publish_progress
+            except ImportError:
+                publish_progress_func = None
+        
         for index,file_name in enumerate(sorted(final_files),start=1):
+            # Check cancellation trước khi xử lý mỗi CCCD
+            try:
+                self.check_cancellation()
+            except Exception as e:
+                if "đã bị hủy" in str(e):
+                    return info_list  # Return partial results
+                raise
+            
             txt_path = os.path.join(folder_txt, file_name)
             with open(txt_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -383,10 +451,32 @@ class DetectWorker():
                 "hometown": quequan,
                 "address": noithuongtru,
                 "address2": thuongtru2})
+            
+            # Publish progress sau mỗi CCCD được xử lý (nếu có job_id và total_cccd)
+            # Giai đoạn 4: collect_cus_info (99% → 100%)
+            # processed_cccd tăng dần nhưng percent giữ ở 99% cho đến khi hoàn thành mới là 100%
+            if publish_progress_func and self.job_id and self.total_cccd > 0:
+                processed_cccd = len(info_list["customer"])
+                base_percent = 99  # Base % của giai đoạn 4
+                stage4_percent = 1  # 1% cho giai đoạn này
+                
+                # Chỉ update percent khi hoàn thành
+                if processed_cccd == self.total_cccd:
+                    # Hoàn thành: 100%
+                    percent = base_percent + stage4_percent  # 99% + 1% = 100%
+                else:
+                    # Đang xử lý: giữ ở 99%
+                    percent = base_percent  # 99%
+                
+                message = f"Đang xử lý OCR... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                publish_progress_func(self.job_id, percent, message, total_cccd=self.total_cccd, processed_cccd=processed_cccd)
+        
         info_list["status"] = "success"
         info_list["message"] = "Đã trích xuất thông tin các CCCD"
         if len(info_list["customer"]) == 0:
             info_list["message"] = "Không tìm thấy thông tin CCCD nào."
+        # Thêm total_cccd vào kết quả để worker có thể dùng
+        info_list["total_cccd"] = self.total_cccd
         self.clear_filefolder(folder_txt)
         
         return info_list
@@ -423,9 +513,83 @@ class DetectWorker():
                     total = len(img_files)
                     if total == 0:
                         print("Không có ảnh nào.")
+                        self.total_cccd = 0
                         return
                     
+                    # Tính tổng số CCCD: đếm số file name unique (bỏ phần mt/ms)
+                    # Ví dụ: 1mt.jpg, 1ms.jpg, 2mt.jpg, 2ms.jpg, 3mt.jpg → có 3 CCCD (1, 2, 3)
+                    base_names = set()
+                    for img_file in img_files:
+                        # Lấy tên file không có extension
+                        file_name_no_ext = os.path.splitext(os.path.basename(img_file))[0]
+                        # Bỏ phần mt hoặc ms ở cuối (nếu có)
+                        # Ví dụ: "1mt" → "1", "CT00380305ms" → "CT00380305"
+                        if file_name_no_ext.lower().endswith('mt'):
+                            base_name = file_name_no_ext[:-2]  # Bỏ "mt"
+                        elif file_name_no_ext.lower().endswith('ms'):
+                            base_name = file_name_no_ext[:-2]  # Bỏ "ms"
+                        else:
+                            # Nếu không có mt/ms, dùng nguyên tên file
+                            base_name = file_name_no_ext
+                        base_names.add(base_name)
+                    
+                    self.total_cccd = len(base_names)
+                    
+                    # Publish progress ngay sau khi tính được total_cccd (nếu có job_id)
+                    if self.job_id and self.total_cccd > 0:
+                        try:
+                            # Import publish_progress
+                            import sys
+                            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                            if project_root not in sys.path:
+                                sys.path.insert(0, project_root)
+                            from shared.redis_client import publish_progress
+                            
+                            # Lưu vào Redis
+                            import redis
+                            redis_client = redis.Redis(
+                                host=os.getenv('REDIS_HOST', '127.0.0.1'),
+                                port=int(os.getenv('REDIS_PORT', 6379)),
+                                db=int(os.getenv('REDIS_DB', 0)),
+                                password=os.getenv('REDIS_PASSWORD', None),
+                                decode_responses=False
+                            )
+                            redis_client.set(f"job:{self.job_id}:total_cccd", str(self.total_cccd))
+                            
+                            # Publish progress với format 0/total_cccd và 0%
+                            publish_progress(self.job_id, 0, f"Bắt đầu xử lý... (0/{self.total_cccd} CCCD - 0%)", 
+                                           total_cccd=self.total_cccd, processed_cccd=0)
+                        except Exception as e:
+                            pass
+                    
+                    # Giai đoạn 1: detect_cccd (0% → 33%)
+                    # Track CCCD đã xử lý trong giai đoạn này
+                    processed_cccd_set = set()  # Reset về 0 cho giai đoạn này
+                    base_percent = 0  # Base % của giai đoạn 1
+                    percent_per_cccd = 33.0 / self.total_cccd if self.total_cccd > 0 else 0
+                    
+                    # Import publish_progress nếu có job_id
+                    publish_progress_func = None
+                    if self.job_id:
+                        try:
+                            import sys
+                            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                            if project_root not in sys.path:
+                                sys.path.insert(0, project_root)
+                            from shared.redis_client import publish_progress
+                            publish_progress_func = publish_progress
+                        except Exception as e:
+                            pass
+                    
                     for i, img_file in enumerate(img_files):
+                        # Check cancellation trước khi xử lý mỗi ảnh
+                        try:
+                            self.check_cancellation()
+                        except Exception as e:
+                            if "đã bị hủy" in str(e):
+                                return
+                            raise
+                        
                         img_data = zf.read(img_file)
                         img_stream = BytesIO(img_data)
                         img_array = cv2.imdecode(np.frombuffer(img_stream.getvalue(), np.uint8), cv2.IMREAD_COLOR)
@@ -458,7 +622,6 @@ class DetectWorker():
                             text_y = (h + text_size[1]) // 2
                             cv2.putText(image_bgr, text, (text_x, text_y), font, scale, (0, 0, 255), thickness)
                             cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), image_bgr)
-                            print(f"[!] {file_name} độ chính xác thấp ({avg_conf:.1f}%)")
                             continue
                         
                         pts = kpts.astype(np.float32)
@@ -488,8 +651,30 @@ class DetectWorker():
                         
                         cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), warped)
                         cv2.imwrite(os.path.join(self.work_dir, "md1", f"boxed_{file_name}.jpg"), image_bgr)
+                        
+                        # Track CCCD đã xử lý (extract base_name)
+                        file_name_no_ext = os.path.splitext(os.path.basename(img_file))[0]
+                        if file_name_no_ext.lower().endswith('mt'):
+                            base_name = file_name_no_ext[:-2]
+                        elif file_name_no_ext.lower().endswith('ms'):
+                            base_name = file_name_no_ext[:-2]
+                        else:
+                            base_name = file_name_no_ext
+                        
+                        processed_cccd_set.add(base_name)
+                        processed_cccd = len(processed_cccd_set)
+                        
+                        # Tính % = base_percent + (processed_cccd × percent_per_cccd)
+                        percent = int(base_percent + (processed_cccd * percent_per_cccd))
+                        if percent > 33:
+                            percent = 33
+                        
+                        # Publish progress
+                        if publish_progress_func and self.job_id and self.total_cccd > 0:
+                            message = f"Đang detect CCCD... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                            publish_progress_func(self.job_id, percent, message, 
+                                               total_cccd=self.total_cccd, processed_cccd=processed_cccd)
             except Exception as e:
-                print(f"Lỗi xử lý zip bytes: {e}")
                 return
         else:
             # Handle file path input
@@ -499,9 +684,83 @@ class DetectWorker():
 
             total = len(img_files)
             if total == 0:
-                print("Không có ảnh nào.")
+                self.total_cccd = 0
                 return
+            
+            # Tính tổng số CCCD: đếm số file name unique (bỏ phần mt/ms)
+            # Ví dụ: 1mt.jpg, 1ms.jpg, 2mt.jpg, 2ms.jpg, 3mt.jpg → có 3 CCCD (1, 2, 3)
+            base_names = set()
+            for img_path in img_files:
+                # Lấy tên file không có extension
+                file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+                # Bỏ phần mt hoặc ms ở cuối (nếu có)
+                # Ví dụ: "1mt" → "1", "CT00380305ms" → "CT00380305"
+                if file_name_no_ext.lower().endswith('mt'):
+                    base_name = file_name_no_ext[:-2]  # Bỏ "mt"
+                elif file_name_no_ext.lower().endswith('ms'):
+                    base_name = file_name_no_ext[:-2]  # Bỏ "ms"
+                else:
+                    # Nếu không có mt/ms, dùng nguyên tên file
+                    base_name = file_name_no_ext
+                base_names.add(base_name)
+            
+            self.total_cccd = len(base_names)
+            
+            # Publish progress ngay sau khi tính được total_cccd (nếu có job_id)
+            if self.job_id and self.total_cccd > 0:
+                try:
+                    # Import publish_progress
+                    import sys
+                    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    if project_root not in sys.path:
+                        sys.path.insert(0, project_root)
+                    from shared.redis_client import publish_progress
+                    
+                    # Lưu vào Redis
+                    import redis
+                    redis_client = redis.Redis(
+                        host=os.getenv('REDIS_HOST', '127.0.0.1'),
+                        port=int(os.getenv('REDIS_PORT', 6379)),
+                        db=int(os.getenv('REDIS_DB', 0)),
+                        password=os.getenv('REDIS_PASSWORD', None),
+                        decode_responses=False
+                    )
+                    redis_client.set(f"job:{self.job_id}:total_cccd", str(self.total_cccd))
+                    
+                            # Publish progress với format 0/total_cccd và 0%
+                    publish_progress(self.job_id, 0, f"Bắt đầu xử lý... (0/{self.total_cccd} CCCD - 0%)", 
+                                   total_cccd=self.total_cccd, processed_cccd=0)
+                except Exception as e:
+                    pass
+            
+            # Giai đoạn 1: detect_cccd (0% → 33%)
+            # Track CCCD đã xử lý trong giai đoạn này
+            processed_cccd_set = set()  # Reset về 0 cho giai đoạn này
+            base_percent = 0  # Base % của giai đoạn 1
+            percent_per_cccd = 33.0 / self.total_cccd if self.total_cccd > 0 else 0
+            
+            # Import publish_progress nếu có job_id
+            publish_progress_func = None
+            if self.job_id:
+                try:
+                    import sys
+                    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    if project_root not in sys.path:
+                        sys.path.insert(0, project_root)
+                    from shared.redis_client import publish_progress
+                    publish_progress_func = publish_progress
+                except Exception as e:
+                    pass
+            
             for i, img_path in enumerate(img_files):
+                # Check cancellation trước khi xử lý mỗi ảnh
+                try:
+                    self.check_cancellation()
+                except Exception as e:
+                    if "đã bị hủy" in str(e):
+                        return
+                    raise
+                
                 results = self.model1.predict(source=img_path, conf=0.5, save=False)
                 r = results[0]
                 if len(r.keypoints) == 0:
@@ -531,7 +790,6 @@ class DetectWorker():
 
                     # Lưu ảnh không đạt
                     cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), image_bgr)
-                    print(f"[!] {file_name} độ chính xác thấp ({avg_conf:.1f}%)")
                     continue
 
                 # ==== Tiếp tục xử lý ảnh đạt yêu cầu ====
@@ -563,8 +821,32 @@ class DetectWorker():
 
                 cv2.imwrite(os.path.join(self.work_md1, f"{file_name}.jpg"), warped)
                 cv2.imwrite(os.path.join(self.work_dir, "md1", f"boxed_{file_name}.jpg"), image_bgr)
+                
+                # Track CCCD đã xử lý (extract base_name)
+                file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+                if file_name_no_ext.lower().endswith('mt'):
+                    base_name = file_name_no_ext[:-2]
+                elif file_name_no_ext.lower().endswith('ms'):
+                    base_name = file_name_no_ext[:-2]
+                else:
+                    base_name = file_name_no_ext
+                
+                processed_cccd_set.add(base_name)
+                processed_cccd = len(processed_cccd_set)
+                
+                # Tính % = base_percent + (processed_cccd × percent_per_cccd)
+                percent = int(base_percent + (processed_cccd * percent_per_cccd))
+                if percent > 25:
+                    percent = 25
+                
+                # Publish progress
+                if publish_progress_func and self.job_id and self.total_cccd > 0:
+                    message = f"Đang detect CCCD... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                    publish_progress_func(self.job_id, percent, message, 
+                                       total_cccd=self.total_cccd, processed_cccd=processed_cccd)
 
     def detect_lines(self):
+        print("3.Detect lines")
         import cv2
         import numpy as np
         import os
@@ -581,13 +863,72 @@ class DetectWorker():
             print("❌ Không tìm thấy ảnh!")
             return
 
-        step = 30 / total
+        # Giai đoạn 3: detect_lines (66% → 99%)
+        # Chia thành 3 công đoạn con: 16%, 16%, 1%
+        stage3_base = 66  # Base % của giai đoạn 3
+        stage3_range = 33  # 99 - 66
+        sub_stage_range_1_2 = 16  # 16% cho công đoạn 1 và 2
+        sub_stage_range_3 = 1  # 1% cho công đoạn 3
+        
+        # Công đoạn 3.1: Detect lines + crop (66% → 82%)
+        sub_stage1_base = 66  # 66%
+        sub_stage1_percent_per_cccd = sub_stage_range_1_2 / self.total_cccd if self.total_cccd > 0 else 0  # 16% / total_cccd
+        
+        # Track CCCD đã xử lý trong công đoạn 3.1
+        processed_cccd_set = set()  # Reset về 0 cho công đoạn này
+        
+        # Import publish_progress nếu có job_id
+        publish_progress_func = None
+        if self.job_id:
+            try:
+                import sys
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                from shared.redis_client import publish_progress
+                publish_progress_func = publish_progress
+            except Exception as e:
+                print(f"⚠️ Không thể import publish_progress: {e}")
 
         for i, img_path in enumerate(img_files):
+            # Check cancellation trước khi xử lý mỗi ảnh
+            try:
+                self.check_cancellation()
+            except Exception as e:
+                if "đã bị hủy" in str(e):
+                    print(f"⚠️ Job {self.job_id} đã bị hủy, dừng xử lý")
+                    return
+                raise
+            
             results = self.model3.predict(source=img_path, conf=0.5, save=False)
             r = results[0]
             if r.masks is None or len(r.masks.xy) == 0:
-                print(f"[!] Bỏ qua {r.path} vì không detect được mask nào")
+                # Track CCCD đã xử lý (kể cả khi skip)
+                file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+                if file_name_no_ext.lower().endswith('mt'):
+                    base_name = file_name_no_ext[:-2]
+                elif file_name_no_ext.lower().endswith('ms'):
+                    base_name = file_name_no_ext[:-2]
+                else:
+                    base_name = file_name_no_ext
+                
+                processed_cccd_set.add(base_name)
+                processed_cccd = len(processed_cccd_set)
+                
+                # Tính % cho công đoạn 3.1: sub_stage1_base + (processed_cccd × sub_stage1_percent_per_cccd)
+                # Đảm bảo mỗi CCCD có percent khác nhau: dùng processed_cccd làm phần thập phân nhỏ
+                base_percent = sub_stage1_base + (processed_cccd * sub_stage1_percent_per_cccd)
+                # Thêm offset nhỏ dựa trên processed_cccd để đảm bảo mỗi CCCD có percent khác nhau
+                percent = base_percent + (processed_cccd * 0.5)  # 0.5% per CCCD để đảm bảo khác nhau
+                if percent > 66 + sub_stage_range_1_2:
+                    percent = 66 + sub_stage_range_1_2  # 82%
+                percent = round(percent)  # Round về số nguyên gần nhất
+                
+                # Publish progress cho công đoạn 3.1
+                if publish_progress_func and self.job_id and self.total_cccd > 0:
+                    message = f"Đang detect lines (crop)... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                    publish_progress_func(self.job_id, percent, message, 
+                                       total_cccd=self.total_cccd, processed_cccd=processed_cccd)
                 continue
 
             image_bgr = cv2.imread(r.path)
@@ -597,7 +938,6 @@ class DetectWorker():
             for j, polygon in enumerate(r.masks.xy):
                 points = polygon.astype(int)
                 if points.shape[0] < 4:
-                    print(f"[!] {file_name} => Bỏ qua mask vì <4 điểm")
                     continue
                 pts = points.reshape((-1, 1, 2))
                 cv2.polylines(image_bgr, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
@@ -632,7 +972,34 @@ class DetectWorker():
             original_ext = os.path.splitext(os.path.basename(r.path))[1] or '.jpg'
             boxed_name = os.path.join(self.work_dir, "md3", "detected_results", f"boxed_{file_name}{original_ext}")
             cv2.imwrite(boxed_name, image_bgr)
-            print(f"[✓] {file_name} => Vẽ + crop {len(r.masks.xy)} polygon")
+            
+            # Track CCCD đã xử lý (extract base_name)
+            file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+            if file_name_no_ext.lower().endswith('mt'):
+                base_name = file_name_no_ext[:-2]
+            elif file_name_no_ext.lower().endswith('ms'):
+                base_name = file_name_no_ext[:-2]
+            else:
+                base_name = file_name_no_ext
+            
+            processed_cccd_set.add(base_name)
+            processed_cccd = len(processed_cccd_set)
+            
+            # Tính % cho công đoạn 3.1: sub_stage1_base + (processed_cccd × sub_stage1_percent_per_cccd)
+            # Đảm bảo mỗi CCCD có percent khác nhau: dùng processed_cccd làm phần thập phân nhỏ
+            # Ví dụ: CCCD 1 = 66.01%, CCCD 2 = 66.02%, ... để sau khi round() vẫn khác nhau
+            base_percent = sub_stage1_base + (processed_cccd * sub_stage1_percent_per_cccd)
+            # Thêm offset nhỏ dựa trên processed_cccd để đảm bảo mỗi CCCD có percent khác nhau
+            percent = base_percent + (processed_cccd * 0.5)  # 0.5% per CCCD để đảm bảo khác nhau
+            if percent > 66 + sub_stage_range_1_2:
+                percent = 66 + sub_stage_range_1_2  # 82%
+            percent = round(percent)  # Round về số nguyên gần nhất
+            
+            # Publish progress cho công đoạn 3.1
+            if publish_progress_func and self.job_id and self.total_cccd > 0:
+                message = f"Đang detect lines (crop)... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                publish_progress_func(self.job_id, percent, message, 
+                                   total_cccd=self.total_cccd, processed_cccd=processed_cccd)
         import os
         from PIL import Image, ImageDraw, ImageFont
         from vietocr.tool.predictor import Predictor
@@ -660,10 +1027,30 @@ class DetectWorker():
 
         ocr_result_file = os.path.join(self.work_md4, 'ocr_results.txt')
         ocr_data = []
-        step_ = 30/len(crop_folder)
+        
+        # Đếm tổng số crop files để tính progress
+        crop_files = [f for f in os.listdir(crop_folder) if f.lower().endswith('.jpg')]
+        total_crops = len(crop_files)
+        
+        # Công đoạn 3.2: OCR từng field (82% → 98%)
+        sub_stage2_base = 66 + sub_stage_range_1_2  # 82%
+        sub_stage2_percent_per_cccd = sub_stage_range_1_2 / self.total_cccd if self.total_cccd > 0 else 0  # 16% / total_cccd
+        
+        # Track CCCD đã OCR xong (để publish progress trong phần OCR)
+        ocr_cccd_tracker = {}  # {base_name: {'mt': set(), 'ms': set()}}
+        ocr_cccd_set = set()  # Track CCCD đã OCR xong (cả mt và ms)
+        
         with open(ocr_result_file, 'w', encoding='utf-8') as f_out:
             i = 0
             for file_name in os.listdir(crop_folder):
+                # Check cancellation trước khi OCR mỗi file
+                try:
+                    self.check_cancellation()
+                except Exception as e:
+                    if "đã bị hủy" in str(e):
+                        return
+                    raise
+                
                 i+=1
                 if file_name.lower().endswith('.jpg'):
                     img_path = os.path.join(crop_folder, file_name)
@@ -678,10 +1065,55 @@ class DetectWorker():
                     if len(text) > 14 and text.isupper() and any(word in text for word in text_ki):
                         text = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
                     f_out.write(f"{file_name}\t{text}\n")
-                    file_name = os.path.splitext(file_name)[0] 
-                    ocr_data.append((file_name, text))
-                    print(f"[✓] {file_name}: {text}")
-        print(f"\n🎉 DONE OCR! Kết quả đã lưu: {ocr_result_file}")
+                    file_name_no_ext = os.path.splitext(file_name)[0]
+                    ocr_data.append((file_name_no_ext, text))
+                    
+                    # Track OCR progress: Extract base_name từ crop file name
+                    # Ví dụ: "1mt-id.jpg" → base_name = "1", field = "id"
+                    parts = file_name_no_ext.split('-')
+                    if len(parts) >= 2:
+                        goc_name = parts[0]  # "1mt" hoặc "1ms"
+                        # Bỏ phần mt/ms để lấy base_name
+                        if goc_name.lower().endswith('mt'):
+                            base_name = goc_name[:-2]
+                            side = 'mt'
+                        elif goc_name.lower().endswith('ms'):
+                            base_name = goc_name[:-2]
+                            side = 'ms'
+                        else:
+                            base_name = goc_name
+                            side = 'unknown'
+                        
+                        if base_name not in ocr_cccd_tracker:
+                            ocr_cccd_tracker[base_name] = {'mt': set(), 'ms': set()}
+                        
+                        # Track field theo mt/ms
+                        ocr_cccd_tracker[base_name][side].add(parts[1] if len(parts) > 1 else 'unknown')
+                        
+                        # Kiểm tra xem CCCD này đã OCR xong chưa (có ít nhất 1 field từ mt hoặc ms)
+                        # Nếu đã có field từ cả mt và ms (hoặc chỉ có 1 trong 2 nếu thiếu), coi như đã OCR xong
+                        has_mt = len(ocr_cccd_tracker[base_name]['mt']) > 0
+                        has_ms = len(ocr_cccd_tracker[base_name]['ms']) > 0
+                        
+                        # Chỉ publish khi OCR xong 1 CCCD (có ít nhất 1 field từ mt hoặc ms)
+                        # Và chỉ publish 1 lần cho mỗi CCCD
+                        if (has_mt or has_ms) and base_name not in ocr_cccd_set:
+                            ocr_cccd_set.add(base_name)
+                            ocr_processed_cccd = len(ocr_cccd_set)
+                            
+                            # Tính % cho công đoạn 3.2: sub_stage2_base + (ocr_processed_cccd × sub_stage2_percent_per_cccd)
+                            # Đảm bảo mỗi CCCD có percent khác nhau
+                            base_percent = sub_stage2_base + (ocr_processed_cccd * sub_stage2_percent_per_cccd)
+                            percent = base_percent + (ocr_processed_cccd * 0.5)  # 0.5% per CCCD để đảm bảo khác nhau
+                            if percent > 66 + (sub_stage_range_1_2 * 2):
+                                percent = 66 + (sub_stage_range_1_2 * 2)  # 98%
+                            percent = round(percent)  # Round về số nguyên gần nhất
+                            
+                            # Publish progress cho công đoạn 3.2
+                            if publish_progress_func and self.job_id and self.total_cccd > 0:
+                                message = f"Đang detect lines (OCR)... ({ocr_processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                                publish_progress_func(self.job_id, percent, message, 
+                                                   total_cccd=self.total_cccd, processed_cccd=ocr_processed_cccd)
 
         goc_dict = {}
         for crop_name, text in ocr_data:
@@ -696,10 +1128,29 @@ class DetectWorker():
             if label == "noi_cap":
                 text = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
             goc_dict[goc_name].append((label, text))
+        
+        # Công đoạn 3.3: Vẽ text + lưu file (98% → 99%)
+        # Chỉ update percent khi hoàn thành (98% → 99%)
+        sub_stage3_base = 66 + (sub_stage_range_1_2 * 2)  # 98%
+        sub_stage3_percent = 1  # 1% cho công đoạn này
+        
+        # Track CCCD đã vẽ text và lưu file xong
+        # {base_name: {'mt': bool, 'ms': bool}}
+        saved_cccd_tracker = {}
+        saved_cccd_set = set()  # Track CCCD đã lưu xong (cả mt và ms, hoặc chỉ có 1 trong 2 nếu thiếu)
+        
         for goc_name, infos in goc_dict.items():
+            # Check cancellation trước khi vẽ text và lưu file cho mỗi CCCD
+            try:
+                self.check_cancellation()
+            except Exception as e:
+                if "đã bị hủy" in str(e):
+                    print(f"⚠️ Job {self.job_id} đã bị hủy, dừng xử lý")
+                    return
+                raise
+            
             img_path = os.path.join(goc_folder, f"{goc_name}.jpg")
             if not os.path.exists(img_path):
-                print(f"[!] Không tìm thấy ảnh gốc: {img_path}")
                 continue
 
             # Dùng OpenCV để vẽ nền mờ
@@ -730,7 +1181,6 @@ class DetectWorker():
             try:
                 font = ImageFont.truetype(font_path, font_size)
             except:
-                print("[!] Không tìm thấy font, dùng mặc định.")
                 font = ImageFont.load_default()
 
             # Vẽ text từng dòng
@@ -753,10 +1203,50 @@ class DetectWorker():
             with open(result_txt, 'w', encoding='utf-8') as f:
                 for label, text in infos:
                     f.write(f"{label}: {text}\n")
-            print(f"[✓]- Đã lưu: {result_img} & {result_txt}")
-        print("\n✅ DONE! Tất cả ảnh + txt đã lưu vào:", results_folder)
+            
+            # Track CCCD đã vẽ text và lưu file xong (extract base_name)
+            if goc_name.lower().endswith('mt'):
+                base_name = goc_name[:-2]
+                side = 'mt'
+            elif goc_name.lower().endswith('ms'):
+                base_name = goc_name[:-2]
+                side = 'ms'
+            else:
+                base_name = goc_name
+                side = 'unknown'
+            
+            # Track từng side (mt/ms) đã lưu
+            if base_name not in saved_cccd_tracker:
+                saved_cccd_tracker[base_name] = {'mt': False, 'ms': False}
+            
+            saved_cccd_tracker[base_name][side] = True
+            
+            # Kiểm tra xem CCCD này đã lưu xong chưa (cả mt và ms đã lưu, hoặc chỉ có 1 trong 2 nếu thiếu)
+            has_mt = saved_cccd_tracker[base_name]['mt']
+            has_ms = saved_cccd_tracker[base_name]['ms']
+            
+            # Chỉ publish khi đã lưu xong cả mt và ms của 1 CCCD (hoặc chỉ có 1 trong 2 nếu thiếu)
+            # Và chỉ publish 1 lần cho mỗi CCCD
+            if (has_mt or has_ms) and base_name not in saved_cccd_set:
+                saved_cccd_set.add(base_name)
+                saved_processed_cccd = len(saved_cccd_set)
+                
+                # Công đoạn 3.3: processed_cccd tăng dần nhưng percent giữ ở 98% cho đến khi hoàn thành mới là 99%
+                if saved_processed_cccd == self.total_cccd:
+                    # Hoàn thành: 99%
+                    percent = sub_stage3_base + sub_stage3_percent  # 98% + 1% = 99%
+                else:
+                    # Đang xử lý: giữ ở 98%
+                    percent = sub_stage3_base  # 98%
+                
+                # Publish progress cho công đoạn 3.3
+                if publish_progress_func and self.job_id and self.total_cccd > 0:
+                    message = f"Đang detect lines (lưu file)... ({saved_processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                    publish_progress_func(self.job_id, percent, message, 
+                                       total_cccd=self.total_cccd, processed_cccd=saved_processed_cccd)
 
     def detect_corners(self):
+        print("2.Detect corners")
         folder = self.work_md1
         img_files = [
             os.path.join(folder, f)
@@ -768,8 +1258,35 @@ class DetectWorker():
             print("❌ Không tìm thấy ảnh!")
             return
 
-        step = 20 / total
+        # Giai đoạn 2: detect_corners (33% → 66%)
+        # Track CCCD đã xử lý trong giai đoạn này
+        processed_cccd_set = set()  # Reset về 0 cho giai đoạn này
+        base_percent = 33  # Base % của giai đoạn 2
+        percent_per_cccd = 33.0 / self.total_cccd if self.total_cccd > 0 else 0
+        
+        # Import publish_progress nếu có job_id
+        publish_progress_func = None
+        if self.job_id:
+            try:
+                import sys
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                from shared.redis_client import publish_progress
+                publish_progress_func = publish_progress
+            except Exception as e:
+                print(f"⚠️ Không thể import publish_progress: {e}")
+        
         for i, img_path in enumerate(img_files):
+            # Check cancellation trước khi xử lý mỗi ảnh
+            try:
+                self.check_cancellation()
+            except Exception as e:
+                if "đã bị hủy" in str(e):
+                    print(f"⚠️ Job {self.job_id} đã bị hủy, dừng xử lý")
+                    return
+                raise
+            
             results = self.model2.predict(source=img_path, conf=0.5, save=False)
             r = results[0]
             img = cv2.imread(r.path)
@@ -786,21 +1303,61 @@ class DetectWorker():
 
             if 'quoc_huy' in centers and 'qr' in centers:
                 ptA, ptB = centers['quoc_huy'], centers['qr']
-                print(f"🟢 quoc_huy - qr | {file_name}")
             elif 'chip' in centers and 'm_red' in centers:
                 ptA, ptB = centers['chip'], centers['m_red']
-                print(f"🟢 chip - m-red | {file_name}")
             else:
-                print(f"❌ Thiếu điểm | {file_name}")
                 cv2.imwrite(os.path.join(self.work_md2, f"{file_name}.jpg"), img)  # Lưu nguyên gốc
+                # Track CCCD đã xử lý (kể cả khi skip)
+                file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+                if file_name_no_ext.lower().endswith('mt'):
+                    base_name = file_name_no_ext[:-2]
+                elif file_name_no_ext.lower().endswith('ms'):
+                    base_name = file_name_no_ext[:-2]
+                else:
+                    base_name = file_name_no_ext
+                
+                processed_cccd_set.add(base_name)
+                processed_cccd = len(processed_cccd_set)
+                
+                # Tính % = base_percent + (processed_cccd × percent_per_cccd)
+                percent = int(base_percent + (processed_cccd * percent_per_cccd))
+                if percent > 66:
+                    percent = 66
+                
+                # Publish progress
+                if publish_progress_func and self.job_id and self.total_cccd > 0:
+                    message = f"Đang detect corners... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                    publish_progress_func(self.job_id, percent, message, 
+                                       total_cccd=self.total_cccd, processed_cccd=processed_cccd)
                 continue
 
             dx, dy = ptB[0] - ptA[0], ptB[1] - ptA[1]
             angle = math.degrees(math.atan2(dy, dx))
             rotate_angle = -angle   # CHUẨN: Luôn lấy -angle để vector nằm ngang
-            print(f"Góc ban đầu: {angle:.2f}° => Xoay trước: {rotate_angle:.2f}°")
             if abs(rotate_angle) < 10:
                 cv2.imwrite(os.path.join(self.work_md2, f"{file_name}.jpg"), img)  # Lưu nguyên gốc
+                # Track CCCD đã xử lý (kể cả khi skip)
+                file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+                if file_name_no_ext.lower().endswith('mt'):
+                    base_name = file_name_no_ext[:-2]
+                elif file_name_no_ext.lower().endswith('ms'):
+                    base_name = file_name_no_ext[:-2]
+                else:
+                    base_name = file_name_no_ext
+                
+                processed_cccd_set.add(base_name)
+                processed_cccd = len(processed_cccd_set)
+                
+                # Tính % = base_percent + (processed_cccd × percent_per_cccd)
+                percent = int(base_percent + (processed_cccd * percent_per_cccd))
+                if percent > 66:
+                    percent = 66
+                
+                # Publish progress
+                if publish_progress_func and self.job_id and self.total_cccd > 0:
+                    message = f"Đang detect corners... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                    publish_progress_func(self.job_id, percent, message, 
+                                       total_cccd=self.total_cccd, processed_cccd=processed_cccd)
                 continue
             h, w = img.shape[:2]
             center_img = (w // 2, h // 2)
@@ -843,7 +1400,30 @@ class DetectWorker():
                 borderValue=(255, 255, 255)
             )
             cv2.imwrite(os.path.join(self.work_md2, f"{file_name}.jpg"), rotated)
-
+            
+            # Track CCCD đã xử lý (extract base_name)
+            file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
+            if file_name_no_ext.lower().endswith('mt'):
+                base_name = file_name_no_ext[:-2]
+            elif file_name_no_ext.lower().endswith('ms'):
+                base_name = file_name_no_ext[:-2]
+            else:
+                base_name = file_name_no_ext
+            
+            processed_cccd_set.add(base_name)
+            processed_cccd = len(processed_cccd_set)
+            
+            # Tính % = base_percent + (processed_cccd × percent_per_cccd)
+            percent = int(base_percent + (processed_cccd * percent_per_cccd))
+            if percent > 50:
+                percent = 50
+            
+            # Publish progress
+            if publish_progress_func and self.job_id and self.total_cccd > 0:
+                message = f"Đang detect corners... ({processed_cccd}/{self.total_cccd} CCCD - {percent}%)"
+                publish_progress_func(self.job_id, percent, message, 
+                                   total_cccd=self.total_cccd, processed_cccd=processed_cccd)
+        
 class CCCDExtractor():
     def __init__(self, config=None, cached_models=None):
         self.config = config or {}
@@ -1987,7 +2567,9 @@ class CCCDExtractorStreaming():
         """Non-streaming task handler (for PDF/Excel conversion)"""
         func_type = data_inp.get("func_type")
         inp_path = data_inp.get("inp_path")
-        results = DetectWorker(input_path=inp_path, type_=func_type, cached_models=self.cached_models).run()
+        job_id = data_inp.get("job_id")
+        total_cccd = data_inp.get("total_cccd", 0)
+        results = DetectWorker(input_path=inp_path, type_=func_type, cached_models=self.cached_models, job_id=job_id, total_cccd=total_cccd).run()
         return results
     
     def handle_task_streaming(self, data_inp: dict, base_percent: int = 0):

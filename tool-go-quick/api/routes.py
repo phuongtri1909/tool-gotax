@@ -46,14 +46,21 @@ def get_model_cache():
     """Lấy hoặc khởi tạo model cache"""
     global _model_cache
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if _model_cache['yolo_model1'] is not None:
+        logger.debug("Model cache đã có sẵn, trả về ngay")
         return _model_cache
     
+    logger.info("Model cache chưa có, đang vào lock để load...")
     with _model_cache['lock']:
+        # Double-check sau khi vào lock
         if _model_cache['yolo_model1'] is not None:
+            logger.info("Model cache đã được load bởi thread khác, trả về")
             return _model_cache
         
-        print("🔄 Đang load models lần đầu (sẽ cache để tái sử dụng)...")
+        logger.info("🔄 Đang load models lần đầu (sẽ cache để tái sử dụng)...")
         
         import main
         main_file_dir = os.path.dirname(os.path.abspath(main.__file__))
@@ -62,23 +69,23 @@ def get_model_cache():
         
         try:
             from ultralytics import YOLO
-            print("  ⏳ Loading YOLO model1 (best.pt)...")
+            logger.info("  ⏳ Loading YOLO model1 (best.pt)...")
             _model_cache['yolo_model1'] = YOLO(os.path.join(base_dir, "best.pt"))
-            print("  ✅ YOLO model1 loaded")
+            logger.info("  ✅ YOLO model1 loaded")
             
-            print("  ⏳ Loading YOLO model2 (best2.pt)...")
+            logger.info("  ⏳ Loading YOLO model2 (best2.pt)...")
             _model_cache['yolo_model2'] = YOLO(os.path.join(base_dir, "best2.pt"))
-            print("  ✅ YOLO model2 loaded")
+            logger.info("  ✅ YOLO model2 loaded")
             
-            print("  ⏳ Loading YOLO model3 (best3.pt)...")
+            logger.info("  ⏳ Loading YOLO model3 (best3.pt)...")
             _model_cache['yolo_model3'] = YOLO(os.path.join(base_dir, "best3.pt"))
-            print("  ✅ YOLO model3 loaded")
+            logger.info("  ✅ YOLO model3 loaded")
         except Exception as e:
-            print(f"  ❌ Lỗi load YOLO models: {e}")
+            logger.error(f"  ❌ Lỗi load YOLO models: {e}", exc_info=True)
         
         _model_cache['vietocr_detector'] = None
         
-        print("✅ Models đã được cache, sẵn sàng xử lý requests!")
+        logger.info("✅ Models đã được cache, sẵn sàng xử lý requests!")
     
     return _model_cache
 

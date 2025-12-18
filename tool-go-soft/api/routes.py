@@ -61,7 +61,7 @@ def check_session_exists(session_id: str) -> tuple[bool, dict]:
         return False, {
             "status": "error",
             "error_code": "SESSION_NOT_FOUND",
-            "message": "Session không tồn tại hoặc đã hết hạn. Vui lòng đăng nhập lại."
+            "message": "Session không tồn tại hoặc đã hết hạn. Vui lòng đăng nhập lại. 1"
         }
     
     return True, None
@@ -351,30 +351,36 @@ def register_routes(app, prefix):
     @app.route(f'{prefix}/crawl/tokhai', methods=['POST'])
     async def crawl_tokhai():
         """
-        Crawl tờ khai (streaming response)
+        Crawl tờ khai (publish events to Redis)
         Body: {
+            "job_id": "...",  # Job ID để publish events
             "session_id": "...",
             "tokhai_type": "842" hoặc "01/GTGT" hoặc "00" (Tất cả) hoặc null,
             "start_date": "01/01/2023",
             "end_date": "31/12/2023"
         }
-        Returns: Server-Sent Events stream
+        Returns: { "status": "accepted", "job_id": "..." }
         
+        API sẽ publish events vào Redis, worker sẽ lắng nghe từ Redis
         Note: Nếu tokhai_type = "00", null, hoặc không có → crawl TẤT CẢ loại tờ khai
         """
         try:
-            from quart import request, Response
+            from quart import request
+            import asyncio
+            from shared.redis_client import publish_progress
+            
             data = await request.get_json()
+            job_id = data.get("job_id")
             session_id = data.get("session_id")
             tokhai_type = data.get("tokhai_type")  # Có thể là None, "00", hoặc giá trị cụ thể
             start_date = data.get("start_date")
             end_date = data.get("end_date")
             
-            if not all([session_id, start_date, end_date]):
+            if not all([job_id, session_id, start_date, end_date]):
                 return jsonify({
                     "status": "error",
                     "error_code": "MISSING_REQUIRED_FIELDS",
-                    "message": "Missing required fields: session_id, start_date, end_date"
+                    "message": "Missing required fields: job_id, session_id, start_date, end_date"
                 }), 400
             
             # Nếu không có tokhai_type hoặc rỗng → mặc định là "Tất cả"
@@ -386,23 +392,448 @@ def register_routes(app, prefix):
             if not session_exists:
                 return jsonify(error_response), 404
             
-            tc = get_tax_crawler()
+            # Chạy crawl trong background task và publish events vào Redis
+            async def crawl_and_publish():
+                try:
+                    tc = get_tax_crawler()
+                    results = []
+                    total_count = 0
+                    zip_filename = None
+                    download_id = None
+                    accumulated_total = 0
+                    accumulated_downloaded = 0
+                    
+                    async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date):
+                        event_type = event.get('type', 'unknown')
+                        
+                        if event_type == 'progress':
+                            percent = event.get('percent', 0)
+                            message = event.get('message', 'Đang xử lý...')
+                            publish_progress(job_id, percent, message, event)
+                            
+                        elif event_type == 'info':
+                            message = event.get('message', '')
+                            publish_progress(job_id, 0, message)
+                            
+                        elif event_type == 'download_start':
+                            total = event.get('accumulated_total', event.get('total', 0))
+                            accumulated_total = total
+                            publish_progress(job_id, 0, f"Bắt đầu tải {total} file...", event)
+                            
+                        elif event_type == 'download_progress':
+                            current = event.get('accumulated_downloaded', event.get('current', 0))
+                            total = event.get('accumulated_total', event.get('total', 0))
+                            accumulated_total = total
+                            accumulated_downloaded = current
+                            percent = int((current / total) * 100) if total > 0 else 0
+                            publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                            
+                        elif event_type == 'item':
+                            results.append(event.get('data'))
+                            
+                        elif event_type == 'complete':
+                            total_from_event = event.get('total', 0)
+                            download_id = event.get('download_id')
+                            zip_filename = event.get('zip_filename')
+                            
+                            if accumulated_total > 0:
+                                total_count = accumulated_total
+                            else:
+                                total_count = total_from_event
+                            
+                            # Publish complete event
+                            from shared.redis_client import get_redis_client
+                            redis_client = get_redis_client()
+                            
+                            result_data = {
+                                'total': total_count,
+                                'zip_filename': zip_filename,
+                                'has_zip': False,
+                                'download_id': download_id
+                            }
+                            redis_client.set(f"job:{job_id}:result", json.dumps(result_data).encode('utf-8'))
+                            redis_client.set(f"job:{job_id}:status", "completed".encode('utf-8'))
+                            
+                            publish_progress(job_id, 100, "Hoàn thành crawl", event)
+                            logger.info(f"[API] Job {job_id} completed: {total_count} file, download_id: {download_id}")
+                            
+                        elif event_type == 'error':
+                            error_msg = event.get('error', 'Lỗi không xác định')
+                            from shared.redis_client import get_redis_client
+                            redis_client = get_redis_client()
+                            redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                            redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                            publish_progress(job_id, 0, f"Lỗi: {error_msg}")
+                            logger.error(f"[API] Job {job_id} error: {error_msg}")
+                            
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"[API] Error in crawl_and_publish for job {job_id}: {error_msg}")
+                    from shared.redis_client import get_redis_client
+                    redis_client = get_redis_client()
+                    redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                    redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                    publish_progress(job_id, 0, f"Lỗi: {error_msg}")
             
-            async def generate():
-                async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date):
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            # Chạy crawl trong background
+            asyncio.create_task(crawl_and_publish())
             
-            return Response(
-                generate(),
-                mimetype='text/event-stream',
-                headers={
-                    'Cache-Control': 'no-cache',
-                    'X-Accel-Buffering': 'no'
-                }
-            )
+            return jsonify({
+                "status": "accepted",
+                "job_id": job_id,
+                "message": "Crawl đã được bắt đầu, events sẽ được publish vào Redis"
+            })
             
         except Exception as e:
             logger.error(f"Error in crawl_tokhai: {e}")
+            return jsonify({
+                "status": "error",
+                "message": str(e)
+            }), 500
+    
+    @app.route(f'{prefix}/crawl/thongbao', methods=['POST'])
+    async def crawl_thongbao():
+        """
+        Crawl thông báo
+        - Nếu có job_id: publish events to Redis (queue mode)
+        - Nếu không có job_id: streaming response (SSE mode - backward compatible)
+        Body: {
+            "job_id": "...",  # Optional - nếu có thì dùng queue mode
+            "session_id": "...",
+            "start_date": "01/01/2023",
+            "end_date": "31/12/2023"
+        }
+        """
+        try:
+            from quart import request, Response
+            import asyncio
+            from shared.redis_client import publish_progress
+            
+            data = await request.get_json()
+            job_id = data.get("job_id")
+            session_id = data.get("session_id")
+            start_date = data.get("start_date")
+            end_date = data.get("end_date")
+            
+            # Validate required fields (job_id is optional)
+            if not all([session_id, start_date, end_date]):
+                return jsonify({
+                    "status": "error",
+                    "error_code": "MISSING_REQUIRED_FIELDS",
+                    "message": "Missing required fields: session_id, start_date, end_date"
+                }), 400
+            
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
+            # Nếu không có job_id → dùng streaming mode (backward compatible)
+            if not job_id:
+                tc = get_tax_crawler()
+                
+                async def generate():
+                    async for event in tc.crawl_thongbao(session_id, start_date, end_date):
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                
+                return Response(
+                    generate(),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
+            
+            # Nếu có job_id → dùng queue mode (publish to Redis)
+            # Chạy crawl trong background task và publish events vào Redis
+            async def crawl_and_publish():
+                try:
+                    tc = get_tax_crawler()
+                    results = []
+                    total_count = 0
+                    zip_filename = None
+                    download_id = None
+                    accumulated_total = 0
+                    accumulated_downloaded = 0
+                    
+                    async for event in tc.crawl_thongbao(session_id, start_date, end_date):
+                        event_type = event.get('type', 'unknown')
+                        
+                        if event_type == 'progress':
+                            percent = event.get('percent', 0)
+                            message = event.get('message', 'Đang xử lý...')
+                            publish_progress(job_id, percent, message, event)
+                            
+                        elif event_type == 'info':
+                            message = event.get('message', '')
+                            publish_progress(job_id, 0, message)
+                            
+                        elif event_type == 'download_start':
+                            total = event.get('accumulated_total', event.get('total', 0))
+                            accumulated_total = total
+                            publish_progress(job_id, 0, f"Bắt đầu tải {total} file...", event)
+                            
+                        elif event_type == 'download_progress':
+                            current = event.get('accumulated_downloaded', event.get('current', 0))
+                            total = event.get('accumulated_total', event.get('total', 0))
+                            accumulated_total = total
+                            accumulated_downloaded = current
+                            percent = int((current / total) * 100) if total > 0 else 0
+                            publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                            
+                        elif event_type == 'item':
+                            results.append(event.get('data'))
+                            
+                        elif event_type == 'complete':
+                            total_from_event = event.get('total', 0)
+                            download_id = event.get('download_id')
+                            zip_filename = event.get('zip_filename')
+                            
+                            if accumulated_total > 0:
+                                total_count = accumulated_total
+                            else:
+                                total_count = total_from_event
+                            
+                            from shared.redis_client import get_redis_client
+                            redis_client = get_redis_client()
+                            
+                            result_data = {
+                                'total': total_count,
+                                'zip_filename': zip_filename,
+                                'has_zip': False,
+                                'download_id': download_id
+                            }
+                            redis_client.set(f"job:{job_id}:result", json.dumps(result_data).encode('utf-8'))
+                            redis_client.set(f"job:{job_id}:status", "completed".encode('utf-8'))
+                            
+                            publish_progress(job_id, 100, "Hoàn thành crawl", event)
+                            
+                        elif event_type == 'error':
+                            error_msg = event.get('error', 'Lỗi không xác định')
+                            from shared.redis_client import get_redis_client
+                            redis_client = get_redis_client()
+                            redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                            redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                            publish_progress(job_id, 0, f"Lỗi: {error_msg}")
+                            
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"[API] Lỗi trong quá trình crawl thông báo cho job {job_id}: {error_msg}")
+                    from shared.redis_client import get_redis_client
+                    redis_client = get_redis_client()
+                    redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                    redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                    publish_progress(job_id, 0, f"Lỗi: {error_msg}")
+            
+            asyncio.create_task(crawl_and_publish())
+            
+            return jsonify({
+                "status": "accepted",
+                "job_id": job_id,
+                "message": "Crawl đã được bắt đầu, events sẽ được publish vào Redis"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in crawl_thongbao: {e}")
+            return jsonify({
+                "status": "error",
+                "message": str(e)
+            }), 500
+    
+    @app.route(f'{prefix}/crawl/giaynoptien', methods=['POST'])
+    async def crawl_giaynoptien():
+        """
+        Crawl giấy nộp tiền
+        - Nếu có job_id: publish events to Redis (queue mode)
+        - Nếu không có job_id: streaming response (SSE mode - backward compatible)
+        Body: {
+            "job_id": "...",  # Optional - nếu có thì dùng queue mode
+            "session_id": "...",
+            "start_date": "01/01/2023",
+            "end_date": "31/12/2023"
+        }
+        """
+        try:
+            from quart import request, Response
+            import asyncio
+            from shared.redis_client import publish_progress
+            
+            data = await request.get_json()
+            job_id = data.get("job_id")
+            session_id = data.get("session_id")
+            start_date = data.get("start_date")
+            end_date = data.get("end_date")
+            
+            # Validate required fields (job_id is optional)
+            if not all([session_id, start_date, end_date]):
+                return jsonify({
+                    "status": "error",
+                    "error_code": "MISSING_REQUIRED_FIELDS",
+                    "message": "Missing required fields: session_id, start_date, end_date"
+                }), 400
+            
+            # Check session exists
+            session_exists, error_response = check_session_exists(session_id)
+            if not session_exists:
+                return jsonify(error_response), 404
+            
+            # Nếu không có job_id → dùng streaming mode (backward compatible)
+            if not job_id:
+                tc = get_tax_crawler()
+                
+                async def generate():
+                    async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date):
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                
+                return Response(
+                    generate(),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
+            
+            # Nếu có job_id → dùng queue mode (publish to Redis)
+            # Chạy crawl trong background task và publish events vào Redis
+            async def crawl_and_publish():
+                try:
+                    tc = get_tax_crawler()
+                    results = []
+                    total_count = 0
+                    zip_filename = None
+                    download_id = None
+                    accumulated_total = 0
+                    accumulated_downloaded = 0
+                    
+                    async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date):
+                        event_type = event.get('type', 'unknown')
+                        
+                        if event_type == 'progress':
+                            percent = event.get('percent', 0)
+                            message = event.get('message', 'Đang xử lý...')
+                            publish_progress(job_id, percent, message, event)
+                            
+                        elif event_type == 'info':
+                            message = event.get('message', '')
+                            publish_progress(job_id, 0, message)
+                            
+                        elif event_type == 'download_start':
+                            total = event.get('accumulated_total', event.get('total', 0))
+                            accumulated_total = total
+                            publish_progress(job_id, 0, f"Bắt đầu tải {total} file...", event)
+                            
+                        elif event_type == 'download_progress':
+                            current = event.get('accumulated_downloaded', event.get('current', 0))
+                            total = event.get('accumulated_total', event.get('total', 0))
+                            accumulated_total = total
+                            accumulated_downloaded = current
+                            percent = int((current / total) * 100) if total > 0 else 0
+                            publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                            
+                        elif event_type == 'item':
+                            results.append(event.get('data'))
+                            
+                        elif event_type == 'complete':
+                            total_from_event = event.get('total', 0)
+                            download_id = event.get('download_id')
+                            zip_filename = event.get('zip_filename')
+                            
+                            if accumulated_total > 0:
+                                total_count = accumulated_total
+                            else:
+                                total_count = total_from_event
+                            
+                            from shared.redis_client import get_redis_client
+                            redis_client = get_redis_client()
+                            
+                            result_data = {
+                                'total': total_count,
+                                'zip_filename': zip_filename,
+                                'has_zip': False,
+                                'download_id': download_id
+                            }
+                            redis_client.set(f"job:{job_id}:result", json.dumps(result_data).encode('utf-8'))
+                            redis_client.set(f"job:{job_id}:status", "completed".encode('utf-8'))
+                            
+                            publish_progress(job_id, 100, "Hoàn thành crawl", event)
+                            
+                        elif event_type == 'error':
+                            error_msg = event.get('error', 'Lỗi không xác định')
+                            from shared.redis_client import get_redis_client
+                            redis_client = get_redis_client()
+                            redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                            redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                            publish_progress(job_id, 0, f"Lỗi: {error_msg}")
+                            
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"[API] Lỗi trong quá trình crawl giấy nộp tiền cho job {job_id}: {error_msg}")
+                    from shared.redis_client import get_redis_client
+                    redis_client = get_redis_client()
+                    redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                    redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                    publish_progress(job_id, 0, f"Lỗi: {error_msg}")
+            
+            asyncio.create_task(crawl_and_publish())
+            
+            return jsonify({
+                "status": "accepted",
+                "job_id": job_id,
+                "message": "Crawl đã được bắt đầu, events sẽ được publish vào Redis"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in crawl_giaynoptien: {e}")
+            return jsonify({
+                "status": "error",
+                "message": str(e)
+            }), 500
+    
+    @app.route(f'{prefix}/download/<download_id>', methods=['GET'])
+    async def download_zip(download_id: str):
+        """
+        Download zip file từ disk storage
+        Worker sẽ gọi endpoint này để download zip file
+        """
+        try:
+            from quart import request, Response
+            tc = get_tax_crawler()
+            
+            # Lấy filename từ query param (optional)
+            filename = request.args.get('filename', f'{download_id}.zip')
+            
+            # Đường dẫn file
+            zip_file_path = os.path.join(tc.ZIP_STORAGE_DIR, f"{download_id}.zip")
+            
+            logger.info(f"Download request for {download_id}, checking file: {zip_file_path}")
+            
+            if not os.path.exists(zip_file_path):
+                return jsonify({
+                    "status": "error",
+                    "message": f"File not found for download_id: {download_id}"
+                }), 404
+            
+            # Đọc file và trả về
+            with open(zip_file_path, 'rb') as f:
+                file_content = f.read()
+            
+            logger.info(f"Sending file: {zip_file_path} as {filename}")
+            
+            # Trả về file với Content-Disposition header
+            response = Response(
+                file_content,
+                mimetype='application/zip',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Content-Length': str(len(file_content))
+                }
+            )
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error downloading zip {download_id}: {e}")
             return jsonify({
                 "status": "error",
                 "message": str(e)
@@ -580,7 +1011,7 @@ def register_routes(app, prefix):
                 "message": str(e)
             }), 500
     
-    @app.route(f'{prefix}/crawl/thongbao', methods=['POST'])
+    @app.route(f'{prefix}/crawl/thongbao', methods=['POST'], endpoint='go_soft_crawl_thongbao')
     async def crawl_thongbao():
         """
         Crawl thông báo (streaming response)

@@ -6,6 +6,7 @@ import re
 import base64
 import tempfile
 import shutil
+import json
 from typing import Dict, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -65,6 +66,7 @@ class SessionManager:
         """Đảm bảo browser đã được khởi tạo"""
         if self._playwright is None:
             self._playwright = await async_playwright().start()
+            
             self._browser = await self._playwright.chromium.launch(
                 headless=True,
                 args=[
@@ -129,6 +131,14 @@ class SessionManager:
         
         page = await context.new_page()
         
+        # Lấy context ID để match chính xác (Playwright context có thể có ID)
+        # Nếu không có ID, dùng index trong browser.contexts
+        try:
+            context_index = len(self._browser.contexts) - 1  # Index của context mới tạo
+            context_id = str(context_index)  # Dùng index làm ID
+        except:
+            context_id = None
+        
         session_data = SessionData(
             session_id=session_id,
             browser=self._browser,
@@ -173,6 +183,15 @@ class SessionManager:
         """Đếm số session đang hoạt động"""
         return len(self._sessions)
     
+    async def get_context(self, session_id: str) -> Optional[BrowserContext]:
+        """
+        Lấy BrowserContext theo session_id
+        Worker có thể gọi method này để lấy context và dùng trực tiếp
+        """
+        session = self.get_session(session_id)
+        if session:
+            return session.context
+        return None
     async def init_login_page(self, session_id: str) -> Dict[str, Any]:
         """
         Lấy captcha: Navigate đến trang login dịch vụ công và fetch captcha
@@ -427,6 +446,7 @@ class SessionManager:
                     session.is_logged_in = True
                     session.dse_session_id = None
                     
+                    
                     return {
                         "success": True,
                         "dse_session_id": None,
@@ -488,6 +508,7 @@ class SessionManager:
                     
                     session.username = username
                     session.is_logged_in = True
+                    
                     
                     return {
                         "success": True,

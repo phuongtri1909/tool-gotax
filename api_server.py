@@ -59,17 +59,17 @@ async def check_api_key():
 
 # Danh sách tools
 TOOLS = {
-    'go-quick': {
-        'path': 'tool-go-quick',
-        'module': 'tool_go_quick',
-        'name': 'ID Quick API',
-        'async': False  # Flask-based, sync
-    },
+    # 'go-quick': {  # Đã tắt - worker gọi trực tiếp, không cần expose API
+    #     'path': 'tool-go-quick',
+    #     'module': 'tool_go_quick',
+    #     'name': 'ID Quick API',
+    #     'async': False  # Flask-based, sync
+    # },
     'go-soft': {
         'path': 'tool-go-soft',
         'module': 'tool_go_soft',
         'name': 'Tax Crawler API (Playwright + httpx)',
-        'async': True  # Quart-based, async
+        'async': True
     },
 }
 

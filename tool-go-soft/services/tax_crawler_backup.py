@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, AsyncGenerator
 from io import BytesIO
 import zipfile
-import uuid
 
 import httpx
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
@@ -49,13 +48,9 @@ BASE_URL = "https://thuedientu.gdt.gov.vn"
 
 
 class TaxCrawlerService:
-    # Thư mục tạm để lưu zip files (sẽ được worker download)
-    ZIP_STORAGE_DIR = os.path.join(tempfile.gettempdir(), 'go-soft-zips')
     
     def __init__(self, session_manager: SessionManager):
         self.session_manager = session_manager
-        # Đảm bảo thư mục zip storage tồn tại
-        os.makedirs(self.ZIP_STORAGE_DIR, exist_ok=True)
         self._http_clients: Dict[str, httpx.AsyncClient] = {}
     
     async def _get_http_client(self, session_id: str) -> Optional[httpx.AsyncClient]:
@@ -186,24 +181,13 @@ class TaxCrawlerService:
         
         try:
             # Bước 1: Navigate đến trang dich-vu-khac
-            # QUAN TRỌNG: Page mới cần navigate đến đúng URL, không dùng current_url
-            # Vì page mới có thể chưa có URL hoặc URL không đúng
-            logger.info("Navigating to /tthc/dich-vu-khac...")
-            try:
-                # Đảm bảo navigate đến đúng URL (không phải homelogin)
-                target_url = 'https://dichvucong.gdt.gov.vn/tthc/dich-vu-khac'
             current_url = page.url
-                
-                # Nếu đang ở homelogin hoặc URL khác, navigate lại
             if '/tthc/dich-vu-khac' not in current_url:
-                    await page.goto(target_url, wait_until='domcontentloaded', timeout=30000)
+                logger.info("Navigating to /tthc/dich-vu-khac...")
+                await page.goto('https://dichvucong.gdt.gov.vn/tthc/dich-vu-khac', wait_until='domcontentloaded', timeout=30000)
                 await asyncio.sleep(2)
-                    logger.info(f"Successfully navigated to dich-vu-khac, current URL: {page.url}")
             else:
-                    logger.info(f"Already on dich-vu-khac page: {current_url}")
-            except Exception as nav_err:
-                logger.error(f"Error navigating to dich-vu-khac: {nav_err}")
-                return False
+                logger.info("Already on /tthc/dich-vu-khac page")
             
             # Bước 2: Gọi trực tiếp hàm JavaScript connectSSO('360103', '', '', '')
             logger.info("Calling connectSSO('360103', '', '', '') via JavaScript...")
@@ -437,29 +421,30 @@ class TaxCrawlerService:
             # Bước 3: Đợi iframe load với src từ thuedientu.gdt.gov.vn
             logger.info("Waiting for iframe to load with thuedientu.gdt.gov.vn for giaynoptien...")
             
-            # Tìm frame trực tiếp từ page.frames (đáng tin cậy hơn)
-            max_wait = 30  # Đợi tối đa 15 giây (30 * 0.5)
+            # Tìm iframe trong #iframeRenderSSO
+            max_wait = 20  # Đợi tối đa 10 giây (20 * 0.5)
             for i in range(max_wait):
                 try:
-                    # Tìm frame từ page.frames trực tiếp
+                    # Tìm iframe trong modal #iframeRenderSSO
+                    iframe_elem = page.locator('#iframeRenderSSO iframe').first
+                    if await iframe_elem.count() > 0:
+                        # Lấy src của iframe
+                        iframe_src = await iframe_elem.get_attribute('src')
+                        if iframe_src and 'thuedientu.gdt.gov.vn' in iframe_src:
+                            logger.info(f"Found iframe with src: {iframe_src[:100]}...")
+                            
+                            # Tìm frame từ page.frames
                             frames = page.frames
                             for f in frames:
-                        if 'thuedientu.gdt.gov.vn' in f.url and 'etaxnnt' in f.url:
+                                if 'thuedientu.gdt.gov.vn' in f.url:
                                     frame = f
                                     logger.info(f"Found frame: {frame.url[:100]}...")
                                     break
                             
                             if frame:
-                        # Kiểm tra xem frame đã load chưa
-                        try:
-                            await frame.wait_for_load_state('domcontentloaded', timeout=2000)
                                 break
-                        except:
-                            # Frame chưa load xong, tiếp tục đợi
-                            frame = None
-                            pass
                 except Exception as e:
-                    logger.debug(f"Waiting for frame (attempt {i + 1}/{max_wait}): {e}")
+                    logger.debug(f"Waiting for iframe (attempt {i + 1}/{max_wait}): {e}")
                 
                 await asyncio.sleep(0.5)
             
@@ -518,7 +503,7 @@ class TaxCrawlerService:
         page = session.page
         
         try:
-            yield {"type": "info", "message": "Đang xử lý tờ khai..."}
+            yield {"type": "info", "message": "Đang navigate đến trang tra cứu..."}
             
             # Navigate đến trang tra cứu tờ khai bằng JavaScript (nhanh hơn click menu)
             success = await self._navigate_to_tokhai_page(page, session.dse_session_id)
@@ -721,7 +706,7 @@ class TaxCrawlerService:
             }
             
         except Exception as e:
-            logger.error(f"❌ Lỗi trong crawl_tokhai_info: {e}")
+            logger.error(f"Error in crawl_tokhai_info: {e}")
             yield {"type": "error", "error": f"Lỗi khi tra cứu thông tin tờ khai: {str(e)}", "error_code": "CRAWL_ERROR"}
     
     async def crawl_tokhai(
@@ -745,36 +730,56 @@ class TaxCrawlerService:
         ssid = session.dse_session_id
         
         try:
-            yield {"type": "info", "message": "Đang xử lý tờ khai..."}
+            yield {"type": "info", "message": "Đang navigate đến trang tra cứu..."}
             
-            # Bước 1: Navigate đến trang tra cứu
+            # Bước 1: Gọi _navigate_to_tokhai_page để click vào link và lấy iframe src
+            logger.info("Calling _navigate_to_tokhai_page to get iframe src...")
             success = await self._navigate_to_tokhai_page(page, ssid)
             
             if not success:
                 yield {"type": "error", "error": "Không thể navigate đến trang tra cứu. Vui lòng thử lại.", "error_code": "NAVIGATION_ERROR"}
                 return
             
-            # Bước 2: Tìm frame từ page.frames với URL chứa thuedientu.gdt.gov.vn
+            # Bước 2: Lấy src của iframe từ #iframeRenderSSO
+            logger.info("Getting iframe src from #iframeRenderSSO...")
+            iframe_src = None
+            try:
+                iframe_elem = page.locator('#iframeRenderSSO iframe').first
+                if await iframe_elem.count() > 0:
+                    iframe_src = await iframe_elem.get_attribute('src')
+                    if iframe_src:
+                        logger.info(f"Got iframe src: {iframe_src[:100]}...")
+                    else:
+                        logger.warning("Iframe src is empty")
+                else:
+                    logger.warning("Iframe element not found in #iframeRenderSSO")
+            except Exception as e:
+                logger.warning(f"Error getting iframe src: {e}")
+            
+            # Bước 3: Tìm frame từ page.frames với URL chứa thuedientu.gdt.gov.vn
             frame = None
             try:
                 frames = page.frames
                 for f in frames:
                     if 'thuedientu.gdt.gov.vn' in f.url:
                         frame = f
+                        logger.info(f"Found frame: {frame.url[:100]}...")
                         break
             except Exception as e:
-                logger.warning(f"Lỗi khi tìm frame: {e}")
+                logger.warning(f"Error finding frame: {e}")
             
             if not frame:
                 yield {"type": "error", "error": "Không tìm thấy iframe sau khi navigate. Vui lòng thử lại.", "error_code": "NAVIGATION_ERROR"}
                 return
             
-            # Bước 3: Đợi frame load và kiểm tra #maTKhai
+            # Bước 4: Đợi frame load và kiểm tra #maTKhai
             try:
                 await frame.wait_for_load_state('domcontentloaded', timeout=15000)
                 await asyncio.sleep(1)
                 await frame.wait_for_selector('#maTKhai', timeout=15000)
+                logger.info("Tra cuu tokhai form loaded successfully")
             except Exception as e:
+                logger.warning(f"Frame found but #maTKhai not found: {e}")
                 yield {"type": "error", "error": "Không tìm thấy form tra cứu. Vui lòng thử lại.", "error_code": "NAVIGATION_ERROR"}
                 return
             
@@ -812,12 +817,13 @@ class TaxCrawlerService:
                         if await option.count() > 0:
                             option_value = await option.first.get_attribute('value')
                             await select_element.select_option(value=option_value)
+                            logger.info(f"Selected tokhai by text, value: {option_value}")
                             is_all_types = (option_value == "00")
                         else:
                             raise Exception(f"Option not found: {tokhai_type}")
                         
             except Exception as e:
-                logger.error(f"❌ Lỗi khi chọn loại tờ khai: {e}")
+                logger.error(f"Error selecting tokhai type: {e}")
                 yield {"type": "error", "error": f"Không tìm thấy loại tờ khai: {tokhai_type}. Hãy dùng value như '842', '00' (Tất cả), hoặc text như '01/GTGT'", "error_code": "INVALID_TOKHAI_TYPE"}
                 return
             
@@ -828,7 +834,6 @@ class TaxCrawlerService:
             
             total_count = 0
             results = []
-            accumulated_total_so_far = 0  # Tổng số file đã biết từ các khoảng trước
             
             yield {"type": "info", "message": f"Bắt đầu crawl {len(date_ranges)} khoảng thời gian..."}
             
@@ -861,13 +866,8 @@ class TaxCrawlerService:
                     
                     await asyncio.sleep(2)
                     
-                    # Bước 1: Collect tất cả items từ tất cả các trang trước
-                    download_queue = []  # Queue để batch download (collect từ tất cả trang)
-                    yield {"type": "info", "message": f"Đang thu thập danh sách tờ khai từ khoảng {date_range[0]} - {date_range[1]}..."}
-                    
-                    # Xử lý pagination - collect tất cả items
+                    # Xử lý pagination
                     check_pages = True
-                    page_number = 1
                     while check_pages:
                         # Tìm bảng kết quả - theo HTML thực tế
                         # Bảng: #data_content_onday hoặc table.md_list2
@@ -876,15 +876,15 @@ class TaxCrawlerService:
                             table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
                             await table_body.wait_for(timeout=5000)
                         except:
-                            if page_number == 1:
                             yield {"type": "info", "message": f"Không có dữ liệu trong khoảng {date_range[0]} - {date_range[1]}"}
                             break
                         
                         rows = table_body.locator('tr')
                         row_count = await rows.count()
                         
-                        yield {"type": "progress", "current": len(download_queue), "message": f"Đang thu thập trang {page_number} ({row_count} tờ khai)..."}
+                        yield {"type": "progress", "current": total_count, "message": f"Đang xử lý {row_count} tờ khai (trang hiện tại)..."}
                         
+                        download_queue = []  # Queue để batch download
                         page_valid_count = 0  # Đếm số items hợp lệ trong trang này
                         
                         for i in range(row_count):
@@ -900,59 +900,15 @@ class TaxCrawlerService:
                                 id_tk = await cols.nth(1).text_content()
                                 id_tk = id_tk.strip() if id_tk else ""
                                 
-                                # Cột 2: Tờ khai/Phụ lục
-                                name_tk = await cols.nth(2).text_content() if col_count > 2 else ""
-                                
-                                # Check xem có link download trong cột 2 (có thể là downloadTkhai hoặc downloadBke)
-                                download_type = None  # "downloadTkhai", "downloadBke", hoặc None
-                                has_link = False
-                                extracted_id = None
-                                
-                                try:
-                                    col2 = cols.nth(2)
-                                    download_link = col2.locator('a')
-                                    link_count = await download_link.count()
-                                    
-                                    if link_count > 0:
-                                        first_link = download_link.first
-                                        onclick = await first_link.get_attribute('onclick')
-                                        title = await first_link.get_attribute('title')
-                                        
-                                        # Check downloadBke (file thuyết minh)
-                                        if onclick and 'downloadBke' in onclick:
-                                            download_type = "downloadBke"
-                                            has_link = True
-                                            # Extract ID từ downloadBke('ID')
-                                            match = re.search(r"downloadBke\(['\"]?(\d+)['\"]?\)", onclick)
-                                            if match:
-                                                extracted_id = match.group(1)
-                                                # Nếu cột 1 rỗng, dùng ID từ onclick
-                                                if not id_tk or len(id_tk) < 4:
-                                                    id_tk = extracted_id
-                                        # Check downloadTkhai (tờ khai thông thường)
-                                        elif onclick and 'downloadTkhai' in onclick:
-                                            download_type = "downloadTkhai"
-                                            has_link = True
-                                            # Extract ID từ downloadTkhai('ID')
-                                            match = re.search(r"downloadTkhai\(['\"]?(\d+)['\"]?\)", onclick)
-                                            if match:
-                                                extracted_id = match.group(1)
-                                        # Fallback: check title
-                                        elif title and 'Tải tệp' in title:
-                                            has_link = True
-                                            download_type = "downloadTkhai"  # Mặc định
-                                        
-                                except Exception as e:
-                                    has_link = False
-                                
-                                # Nếu không có ID hợp lệ và không có link download, skip
-                                if (not id_tk or len(id_tk) < 4) and not has_link:
+                                if len(id_tk) < 4:
                                     continue
                                 
                                 # Chỉ đếm khi item hợp lệ
                                 page_valid_count += 1
                                 
                                 # Extract thông tin theo đúng cấu trúc HTML
+                                # Cột 2: Tờ khai/Phụ lục
+                                name_tk = await cols.nth(2).text_content() if col_count > 2 else ""
                                 # Cột 3: Kỳ tính thuế  
                                 ky_tinh_thue = await cols.nth(3).text_content() if col_count > 3 else ""
                                 # Cột 4: Loại tờ khai (Chính thức/Bổ sung)
@@ -989,6 +945,31 @@ class TaxCrawlerService:
                                 file_name = self._remove_accents(file_name)
                                 file_name = file_name.replace("/", "_").replace(":", "_").replace("\\", "_")
                                 
+                                # QUAN TRỌNG: Check xem có link download trong cột 2
+                                # Link download phải có onclick="downloadTkhai(...)" hoặc title="Tải tệp tờ khai về"
+                                has_link = False
+                                try:
+                                    col2 = cols.nth(2)
+                                    download_link = col2.locator('a')
+                                    link_count = await download_link.count()
+                                    
+                                    if link_count > 0:
+                                        # Kiểm tra link có onclick="downloadTkhai" (link download thực sự)
+                                        first_link = download_link.first
+                                        onclick = await first_link.get_attribute('onclick')
+                                        title = await first_link.get_attribute('title')
+                                        
+                                        # Link download phải có onclick chứa "downloadTkhai" hoặc title="Tải tệp tờ khai về"
+                                        if onclick and 'downloadTkhai' in onclick:
+                                            has_link = True
+                                        elif title and 'Tải tệp' in title:
+                                            has_link = True
+                                        
+                                        logger.info(f"Row {id_tk}: has_link={has_link}, onclick={onclick[:50] if onclick else None}, title={title}")
+                                except Exception as e:
+                                    logger.debug(f"Error checking link for {id_tk}: {e}")
+                                    has_link = False
+                                
                                 download_info = {
                                     "id": id_tk,
                                     "name": name_tk_normalized,
@@ -1000,8 +981,9 @@ class TaxCrawlerService:
                                     "noi_nop": noi_nop.strip() if noi_nop else "",
                                     "trang_thai": status,
                                     "file_name": file_name,
-                                    "has_link": has_link,
-                                    "download_type": download_type  # "downloadTkhai", "downloadBke", hoặc None
+                                    "cols": cols,
+                                    "row_index": i,
+                                    "has_link": has_link  # Đánh dấu có link hay không
                                 }
                                 download_queue.append(download_info)
                                 
@@ -1009,84 +991,11 @@ class TaxCrawlerService:
                                 logger.error(f"Error processing row: {e}")
                                 continue
                         
-                        # Check pagination - next page
-                        try:
-                            next_btn = frame.locator('img[src="/etaxnnt/static/images/pagination_right.gif"]')
-                            if await next_btn.count() > 0:
-                                await next_btn.click()
-                                await asyncio.sleep(1)
-                                page_number += 1
-                            else:
-                                check_pages = False
-                        except:
-                            check_pages = False
-                    
-                    # Bước 2: Sau khi collect xong tất cả, bắt đầu download
+                        # Batch download - tối ưu tốc độ (download 5 file cùng lúc)
                         if download_queue:
-                        total_files_in_queue = len(download_queue)
-                        yield {"type": "info", "message": f"Đã thu thập {total_files_in_queue} tờ khai. Bắt đầu download..."}
-                        
-                        # Cập nhật tổng tích lũy: cộng thêm số file của khoảng này
-                        accumulated_total_so_far += total_files_in_queue
-                        
-                        yield {
-                            "type": "download_start",
-                            "total_to_download": total_files_in_queue,
-                            "date_range": f"{date_range[0]} - {date_range[1]}",
-                            "range_index": range_idx + 1,
-                            "total_ranges": len(date_ranges),
-                            "accumulated_total": accumulated_total_so_far,  # Tổng tích lũy từ tất cả các khoảng đã biết
-                            "accumulated_downloaded": total_count  # Số đã download từ các lần trước
-                        }
-                        
-                        # Download với progress tracking
-                        downloaded_count = 0
-                        successful_downloads = []
-                        
-                        # Download tất cả song song (max 5 cùng lúc) với progress tracking
-                        semaphore = asyncio.Semaphore(5)
-                        async def download_one(item):
-                            async with semaphore:
-                                return await self._batch_download_one(session, item, temp_dir, ssid, frame, session_id)
-                        
-                        # Download và track progress
-                        download_tasks = [download_one(item) for item in download_queue]
-                        
-                        # Keep-alive task để gửi empty events mỗi 30 giây khi đang download
-                        # Tránh connection bị đóng do idle timeout
-                        keep_alive_active = True
-                        async def keep_alive_loop():
-                            while keep_alive_active:
-                                await asyncio.sleep(30)  # Gửi keep-alive mỗi 30 giây
-                                if keep_alive_active:
-                                    yield {"type": "keep_alive", "message": "Đang download..."}
-                        
-                        # Tạo keep-alive task
-                        keep_alive_task = None
-                        try:
-                            # Process downloads as they complete
-                            for coro in asyncio.as_completed(download_tasks):
-                                result = await coro
-                                if result:
-                                    downloaded_count += 1
-                                    successful_downloads.append(result)
-                                    # Yield progress
-                                    yield {
-                                        "type": "download_progress",
-                                        "downloaded": downloaded_count,
-                                        "total": total_files_in_queue,
-                                        "percent": int((downloaded_count / total_files_in_queue) * 100) if total_files_in_queue > 0 else 0,
-                                        "date_range": f"{date_range[0]} - {date_range[1]}",
-                                        "range_index": range_idx + 1,
-                                        "total_ranges": len(date_ranges),
-                                        "accumulated_downloaded": total_count + downloaded_count,
-                                        "accumulated_total": accumulated_total_so_far
-                                    }
-                        finally:
-                            # Dừng keep-alive khi download xong
-                            keep_alive_active = False
-                        
-                        # Yield items
+                            yield {"type": "info", "message": f"Đang download {len(download_queue)} file..."}
+                            successful_downloads = await self._batch_download(session, download_queue, temp_dir, ssid, frame)
+                            
                             for item in successful_downloads:
                                 result = {
                                     "id": item["id"],
@@ -1105,9 +1014,22 @@ class TaxCrawlerService:
                             
                             # Chỉ đếm những file download thành công
                             total_count += len(successful_downloads)
+                            
+                            download_queue = []
                         else:
                             # Nếu không có gì để download, không đếm
                             pass
+                        
+                        # Check pagination - next page
+                        try:
+                            next_btn = frame.locator('img[src="/etaxnnt/static/images/pagination_right.gif"]')
+                            if await next_btn.count() > 0:
+                                await next_btn.click()
+                                await asyncio.sleep(1)
+                            else:
+                                check_pages = False
+                        except:
+                            check_pages = False
                 
                 except Exception as e:
                     logger.error(f"Error processing date range {date_range}: {e}")
@@ -1116,25 +1038,12 @@ class TaxCrawlerService:
             
             # Tạo ZIP file từ các file đã download
             zip_base64 = None
-            download_id = None
             files_info = []
             total_size = 0
             
             if os.listdir(temp_dir):
-                # Tạo tên file ZIP
-                if is_all_types:
-                    zip_filename = f"tokhai_TAT_CA_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
-                    tokhai_type_label = "Tất cả"
-                else:
-                    zip_filename = f"tokhai_{tokhai_type}_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
-                    tokhai_type_label = tokhai_type
-                
-                # Tạo download_id (UUID) để worker có thể download sau
-                download_id = str(uuid.uuid4())
-                zip_file_path = os.path.join(self.ZIP_STORAGE_DIR, f"{download_id}.zip")
-                
-                # Lưu zip vào disk thay vì chỉ tạo base64
-                with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                zip_buffer = BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
                     for file_name in os.listdir(temp_dir):
                         file_path = os.path.join(temp_dir, file_name)
                         if os.path.isfile(file_path):
@@ -1146,22 +1055,9 @@ class TaxCrawlerService:
                                 "size": file_size
                             })
                 
-                # Đọc file để tạo base64 (vẫn cần cho Redis)
-                with open(zip_file_path, 'rb') as f:
-                    zip_base64 = base64.b64encode(f.read()).decode('utf-8')
-                
-                logger.info(f"✅ Đã tạo file ZIP: {zip_filename} (download_id: {download_id})")
-                
-                # Lưu download_id vào Redis
-                try:
-                    from shared.redis_client import get_redis_client
-                    redis_client = get_redis_client()
-                    redis_key = f"session:{session_id}:download_id"
-                    redis_client.setex(redis_key, 3600, download_id.encode('utf-8'))
-                except Exception as redis_err:
-                    logger.warning(f"⚠️ Không thể lưu download_id vào Redis: {redis_err}")
-            else:
-                # Không có files
+                zip_base64 = base64.b64encode(zip_buffer.getvalue()).decode('utf-8')
+            
+            # Tạo tên file ZIP
             if is_all_types:
                 zip_filename = f"tokhai_TAT_CA_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
                 tokhai_type_label = "Tất cả"
@@ -1176,45 +1072,19 @@ class TaxCrawlerService:
             
             # Total = số file thực tế đã download (vì user cần số file trong ZIP)
             # Nếu muốn biết số items đã tìm thấy, dùng actual_results_count
-            # Complete event KHÔNG gửi zip_base64 và results (quá lớn), chỉ gửi metadata
             yield {
                 "type": "complete",
                 "total": actual_files_count,  # Số file thực tế trong ZIP (chính xác nhất)
                 "results_count": actual_results_count,  # Số items đã tìm thấy (có thể > files nếu download thất bại)
                 "total_rows_processed": total_count,  # Số rows đã xử lý (để debug)
+                "results": results,
+                "files": files_info,
                 "files_count": actual_files_count,
                 "total_size": total_size,
-                "download_id": download_id,  # ID để download zip từ API server
+                "zip_base64": zip_base64,
                 "zip_filename": zip_filename,
                 "tokhai_type": tokhai_type_label,
-                "is_all_types": is_all_types,
-                "has_zip": download_id is not None
-                # NOTE: results và files_info không gửi trong complete event để giảm kích thước
-                # Worker sẽ lấy từ zip file hoặc từ zip_data event
-            }
-            
-            # Gửi zip_base64 trong event riêng (nếu có) - worker sẽ nhận và lưu vào Redis
-            if download_id and zip_base64:
-                # Chia nhỏ base64 thành chunks nếu quá lớn (>5MB base64 = ~3.75MB binary)
-                chunk_size = 5 * 1024 * 1024  # 5MB per chunk
-                if len(zip_base64) > chunk_size:
-                    logger.info(f"Zip base64 is large ({len(zip_base64)/1024/1024:.2f} MB), sending in chunks")
-                    for i in range(0, len(zip_base64), chunk_size):
-                        chunk = zip_base64[i:i+chunk_size]
-                        yield {
-                            "type": "zip_chunk",
-                            "download_id": download_id,
-                            "chunk_index": i // chunk_size,
-                            "chunk_data": chunk,
-                            "is_last": (i + chunk_size) >= len(zip_base64)
-                        }
-                else:
-                    # Nhỏ hơn 5MB, gửi một lần
-                    yield {
-                        "type": "zip_data",
-                        "download_id": download_id,
-                        "zip_base64": zip_base64,
-                        "zip_filename": zip_filename
+                "is_all_types": is_all_types
             }
             
         except Exception as e:
@@ -1237,260 +1107,7 @@ class TaxCrawlerService:
         except:
             return text
     
-    async def _batch_download_one(self, session: SessionData, item: Dict, temp_dir: str, ssid: str, frame, session_id: str = None) -> Optional[Dict]:
-        """Download một item và trả về item nếu thành công"""
-        try:
-            id_tk = item["id"]
-            file_name = item["file_name"]
-            has_link = item.get("has_link", False)
-            download_type = item.get("download_type")
-            
-            page = session.page
-            
-            # Lấy session ID và processor ID từ form (cần cho cả 2 loại)
-            current_ssid = ssid
-            if not current_ssid or current_ssid == "NotFound":
-                try:
-                    dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
-                    if await dse_session_input.count() > 0:
-                        current_ssid = await dse_session_input.get_attribute('value') or ""
-                except:
-                    pass
-            
-            if not current_ssid or current_ssid == "NotFound":
-                try:
-                    frame_url = frame.url
-                    match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
-                    if match:
-                        current_ssid = match.group(1)
-                except:
-                    pass
-            
-            dse_processor_id = ""
-            if current_ssid and current_ssid != "NotFound":
-                try:
-                    processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
-                    if await processor_id_input.count() > 0:
-                        dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
-                except:
-                    pass
-            
-            if has_link and current_ssid and current_ssid != "NotFound":
-                # Tờ khai có link - build URL từ id_tk
-                if download_type == "downloadBke":
-                    # File thuyết minh - dùng downloadBke
-                    if dse_processor_id:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downBke&messageId={id_tk}"
-                    else:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downBke&messageId={id_tk}"
-                else:
-                    # Tờ khai thông thường - dùng downloadTkhai
-                    if dse_processor_id:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
-                    else:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
-                
-                # Download bằng new_page.goto()
-                new_page = None
-                try:
-                    new_page = await session.context.new_page()
-                    new_page.set_default_timeout(30000)
-                    
-                    download_occurred = False
-                    response_data = None
-                    
-                    async def handle_response(response):
-                        nonlocal download_occurred, response_data
-                        content_type = response.headers.get('content-type', '').lower()
-                        if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
-                            download_occurred = True
-                            response_data = await response.body()
-                        elif 'xlsx' in content_type or response.url.endswith('.xlsx') or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
-                            download_occurred = True
-                            response_data = await response.body()
-                    
-                    new_page.on("response", handle_response)
-                    response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(1)
-                    
-                    if download_occurred and response_data:
-                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                        with open(save_path, 'wb') as f:
-                            f.write(response_data)
-                        
-                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                            logger.info(f"Downloaded {id_tk} ({download_type}) -> {file_name}")
-                            return item
-                    else:
-                        try:
-                            async with new_page.expect_download(timeout=5000) as download_info:
-                                await new_page.reload(wait_until="domcontentloaded")
-                            
-                            download = await download_info.value
-                            file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                            save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                            await download.save_as(save_path)
-                            
-                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                logger.info(f"Downloaded {id_tk} ({download_type}) via download event -> {file_name}")
-                                return item
-                        except:
-                            if response:
-                                content = await response.body()
-                                if content and len(content) > 100:
-                                    file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                                    save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                                    with open(save_path, 'wb') as f:
-                                        f.write(content)
-                                    
-                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                        logger.info(f"Downloaded {id_tk} ({download_type}) from response body -> {file_name}")
-                                        return item
-                except Exception as e2:
-                    logger.warning(f"Error downloading {id_tk} via new_page.goto(): {e2}")
-                    if session_id:
-                        try:
-                            http_client = await self._get_http_client(session_id)
-                            if http_client:
-                                response = await http_client.get(download_url, timeout=30.0)
-                                if response.status_code == 200:
-                                    content = response.content
-                                    if content and len(content) > 100:
-                                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                                        with open(save_path, 'wb') as f:
-                                            f.write(content)
-                                        
-                                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                            logger.info(f"Downloaded {id_tk} ({download_type}) via httpx -> {file_name}")
-                                            return item
-                        except:
-                            pass
-                finally:
-                    if new_page:
-                        try:
-                            await new_page.close()
-                        except:
-                            pass
-                return None
-            elif current_ssid and current_ssid != "NotFound":
-                # Special tokhai - không có link
-                # Special tokhai - same logic as before
-                current_ssid = ssid
-                
-                if not current_ssid or current_ssid == "NotFound":
-                    try:
-                        dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
-                        if await dse_session_input.count() > 0:
-                            current_ssid = await dse_session_input.get_attribute('value') or ""
-                    except:
-                        pass
-                
-                if not current_ssid or current_ssid == "NotFound":
-                    try:
-                        frame_url = frame.url
-                        match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
-                        if match:
-                            current_ssid = match.group(1)
-                    except:
-                        pass
-                
-                if current_ssid and current_ssid != "NotFound":
-                    dse_processor_id = ""
-                    try:
-                        processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
-                        if await processor_id_input.count() > 0:
-                            dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
-                    except:
-                        pass
-                    
-                    if dse_processor_id:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
-                    else:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
-                    
-                    new_page = None
-                    try:
-                        new_page = await session.context.new_page()
-                        new_page.set_default_timeout(30000)
-                        
-                        download_occurred = False
-                        response_data = None
-                        
-                        async def handle_response(response):
-                            nonlocal download_occurred, response_data
-                            content_type = response.headers.get('content-type', '').lower()
-                            if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
-                                download_occurred = True
-                                response_data = await response.body()
-                        
-                        new_page.on("response", handle_response)
-                        response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
-                        await asyncio.sleep(1)
-                        
-                        if download_occurred and response_data:
-                            save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                            with open(save_path, 'wb') as f:
-                                f.write(response_data)
-                            
-                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
-                                return item
-                        else:
-                            try:
-                                async with new_page.expect_download(timeout=5000) as download_info:
-                                    await new_page.reload(wait_until="domcontentloaded")
-                                
-                                download = await download_info.value
-                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                await download.save_as(save_path)
-                                
-                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                    logger.info(f"Downloaded special (no link) {id_tk} via download event -> {file_name}")
-                                    return item
-                            except:
-                                if response:
-                                    content = await response.body()
-                                    if content and len(content) > 100:
-                                        save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                        with open(save_path, 'wb') as f:
-                                            f.write(content)
-                                        
-                                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                            logger.info(f"Downloaded special (no link) {id_tk} from response body -> {file_name}")
-                                            return item
-                    except Exception as e2:
-                        logger.warning(f"Error downloading special {id_tk}: {e2}")
-                        if session_id:
-                            try:
-                                http_client = await self._get_http_client(session_id)
-                                if http_client:
-                                    response = await http_client.get(download_url, timeout=30.0)
-                                    if response.status_code == 200:
-                                        content = response.content
-                                        if content and len(content) > 100:
-                                            save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                            with open(save_path, 'wb') as f:
-                                                f.write(content)
-                                            
-                                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                                logger.info(f"Downloaded special (no link) {id_tk} via httpx -> {file_name}")
-                                                return item
-                            except:
-                                pass
-                    finally:
-                        if new_page:
-                            try:
-                                await new_page.close()
-                            except:
-                                pass
-                return None
-        except Exception as e:
-            logger.warning(f"Error downloading {item.get('id', 'unknown')}: {e}")
-            return None
-    
-    async def _batch_download(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame, session_id: str = None):
+    async def _batch_download(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame):
         """
         Download nhiều file song song (tối ưu tốc độ)
         Limit concurrent downloads = 5 để không quá tải
@@ -1507,8 +1124,7 @@ class TaxCrawlerService:
                     id_tk = item["id"]
                     file_name = item["file_name"]
                     cols = item["cols"]
-                    has_link = item.get("has_link", False)
-                    download_type = item.get("download_type")  # "downloadTkhai", "downloadBke", hoặc None
+                    has_link = item.get("has_link", False)  # Lấy từ item (đã check trước)
                     
                     if has_link:
                         # Có link - click để download (bình thường)
@@ -1518,26 +1134,22 @@ class TaxCrawlerService:
                             await download_link.first.click()
                         
                         download = await download_info.value
-                        # File thuyết minh có thể là .xlsx, còn tờ khai thường là .xml
-                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
+                        save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
                         await download.save_as(save_path)
                         
                         # Kiểm tra file đã được lưu thành công
                         if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                            logger.info(f"Downloaded {id_tk} ({download_type}) -> {file_name}")
+                            logger.info(f"Downloaded {id_tk} -> {file_name}")
                             successful_downloads.append(item)
                         else:
                             logger.warning(f"Download failed: File not saved or empty for {id_tk}")
                     else:
                         # Tờ khai đặc biệt - không có link <a> download (không có onclick="downloadTkhai" hoặc title="Tải tệp")
-                        # Hàm downloadTkhai(msgId) dùng window.location.href để navigate, không trigger download event trên page
-                        # Nên cần build URL và dùng new_page.goto() để trigger download event
-                        logger.info(f"Special tokhai (no download link) detected: {id_tk}, building download URL")
-                        
+                        # Dùng URL trực tiếp với dse_pageId=14 và messageId={id_tk}
+                        logger.info(f"Special tokhai (no download link) detected: {id_tk}, using manual download method")
                         current_ssid = ssid
                         
-                        # Lấy session ID từ form
+                        # Ưu tiên 1: Lấy từ input hidden trong form traCuuKhaiForm
                         if not current_ssid or current_ssid == "NotFound":
                             try:
                                 dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
@@ -1548,9 +1160,10 @@ class TaxCrawlerService:
                             except Exception as e:
                                 logger.warning(f"Error getting dse_sessionId from form input: {e}")
                         
-                        # Lấy từ frame URL nếu chưa có
+                        # Ưu tiên 2: Lấy từ frame URL
                         if not current_ssid or current_ssid == "NotFound":
                             try:
+                                # Lấy từ frame URL
                                 frame_url = frame.url
                                 match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
                                 if match:
@@ -1559,8 +1172,26 @@ class TaxCrawlerService:
                             except Exception as e:
                                 logger.warning(f"Error getting dse_sessionId from frame URL: {e}")
                         
+                        # Fallback: Lấy từ performance logs (giống code cũ)
+                        if not current_ssid or current_ssid == "NotFound":
+                            try:
+                                # Lấy từ performance logs
+                                performance_logs = await page.evaluate("""
+                                    () => {
+                                        return window.performance.getEntriesByType('resource').map(entry => entry.name);
+                                    }
+                                """)
+                                
+                                for url in performance_logs:
+                                    match = re.search(r"[&?]dse_sessionId=([^&]+)", url)
+                                    if match:
+                                        current_ssid = match.group(1)
+                                        logger.info(f"Retrieved dse_sessionId from performance log: {current_ssid[:30]}...")
+                                        break
+                            except Exception as e:
+                                logger.warning(f"Error getting dse_sessionId from performance logs: {e}")
+                        
                         if current_ssid and current_ssid != "NotFound":
-                            # Lấy processor ID từ form
                             dse_processor_id = ""
                             try:
                                 processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
@@ -1571,122 +1202,49 @@ class TaxCrawlerService:
                             except:
                                 pass
                             
-                            # Build URL giống như hàm downloadTkhai() làm
-                            # downloadTkhai() làm: window.location.href='/etaxnnt/Request?dse_sessionId=...&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId=...&dse_nextEventName=downTkhai&messageId='+msgId
                             if dse_processor_id:
-                                # Có processor ID: dùng pageId=10 (hoặc có thể là 8 như trong HTML mẫu)
-                                download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
+                                download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=10&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
                             else:
-                                # Không có processor ID: dùng pageId=14
                                 download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
                             
-                            logger.info(f"Downloading special (no link) {id_tk} via new_page.goto(): {download_url[:100]}...")
+                            logger.info(f"Downloading special (no link) {id_tk} via window.open: {download_url[:100]}...")
                             
-                            new_page = None
                             try:
-                                new_page = await session.context.new_page()
-                                new_page.set_default_timeout(30000)
+                                async with page.expect_download(timeout=30000) as download_info:
+                                    await frame.evaluate(f"window.open('{download_url}', '_blank');")
                                 
-                                # Intercept response để bắt file download
-                                download_occurred = False
-                                response_data = None
+                                await asyncio.sleep(0.5)
                                 
-                                async def handle_response(response):
-                                    nonlocal download_occurred, response_data
-                                    content_type = response.headers.get('content-type', '').lower()
-                                    # Kiểm tra nếu response là XML file
-                                    if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
-                                        download_occurred = True
-                                        response_data = await response.body()
-                                        logger.info(f"Got XML response for {id_tk}, size: {len(response_data)} bytes")
-                                
-                                new_page.on("response", handle_response)
-                                
-                                # Navigate đến URL
-                                response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
-                                
-                                # Chờ một chút để response được xử lý
-                                await asyncio.sleep(1)
-                                
-                                # Nếu có download event, bắt nó
-                                if download_occurred and response_data:
+                                download = await download_info.value
                                 save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                    with open(save_path, 'wb') as f:
-                                        f.write(response_data)
+                                await download.save_as(save_path)
                                 
                                 if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
                                     logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
                                     successful_downloads.append(item)
                                 else:
                                     logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
-                                else:
-                                    # Fallback: thử bắt download event
+                            except Exception as e2:
+                                logger.warning(f"Error downloading special {id_tk} via window.open: {e2}, trying new_page fallback...")
+                                try:
+                                    new_page = await session.context.new_page()
                                     try:
-                                        async with new_page.expect_download(timeout=5000) as download_info:
-                                            # Trigger download bằng cách click hoặc navigate lại
-                                            await new_page.reload(wait_until="domcontentloaded")
+                                        async with new_page.expect_download(timeout=30000) as download_info:
+                                            await new_page.goto(download_url)
                                         
                                         download = await download_info.value
                                         save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
                                         await download.save_as(save_path)
                                         
                                         if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                            logger.info(f"Downloaded special (no link) {id_tk} via download event -> {file_name}")
+                                            logger.info(f"Downloaded special (no link) {id_tk} via fallback -> {file_name}")
                                             successful_downloads.append(item)
                                         else:
-                                            logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
-                                    except:
-                                        # Nếu không có download event, thử lấy content từ response
-                                        if response:
-                                            content = await response.body()
-                                            if content and len(content) > 100:  # Có thể là XML file
-                                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                                with open(save_path, 'wb') as f:
-                                                    f.write(content)
-                                                
-                                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                                    logger.info(f"Downloaded special (no link) {id_tk} from response body -> {file_name}")
-                                                    successful_downloads.append(item)
-                                                else:
-                                                    logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
-                                            else:
-                                                logger.warning(f"No valid content in response for {id_tk}")
-                                        else:
-                                            logger.warning(f"No response received for {id_tk}")
-                            except Exception as e2:
-                                logger.warning(f"Error downloading special {id_tk} via new_page.goto(): {e2}")
-                                
-                                # Fallback: thử dùng httpx client với cookies
-                                if session_id:
-                                    try:
-                                        logger.info(f"Trying httpx fallback for {id_tk}")
-                                        http_client = await self._get_http_client(session_id)
-                                        if http_client:
-                                            response = await http_client.get(download_url, timeout=30.0)
-                                            if response.status_code == 200:
-                                                content = response.content
-                                                if content and len(content) > 100:
-                                                    save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                                    with open(save_path, 'wb') as f:
-                                                        f.write(content)
-                                                    
-                                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                                        logger.info(f"Downloaded special (no link) {id_tk} via httpx -> {file_name}")
-                                                        successful_downloads.append(item)
-                                                    else:
-                                                        logger.warning(f"httpx download failed: File not saved or empty for {id_tk}")
-                                                else:
-                                                    logger.warning(f"httpx response has no valid content for {id_tk}")
-                                            else:
-                                                logger.warning(f"httpx response status {response.status_code} for {id_tk}")
-                                    except Exception as e3:
-                                        logger.warning(f"httpx fallback also failed for {id_tk}: {e3}")
+                                            logger.warning(f"Fallback download failed: File not saved or empty for {id_tk}")
                                     finally:
-                                if new_page:
-                                    try:
                                         await new_page.close()
-                                    except:
-                                        pass
+                                except Exception as e3:
+                                    logger.error(f"Fallback download also failed for {id_tk}: {e3}")
                         else:
                             logger.warning(f"No valid session ID for special download: {id_tk}. ssid={ssid}")
                 except Exception as e:
@@ -2183,134 +1741,6 @@ class TaxCrawlerService:
         
         return False
     
-    async def _download_single_giaynoptien(self, session: SessionData, item: Dict, temp_dir: str, max_retries: int = 2) -> bool:
-        """
-        Download một file giấy nộp tiền
-        item: {
-            "id": id_gnt,
-            "row": row,
-            "col_index": col_idx,
-            "link_locator": links.first
-        }
-        """
-        id_gnt = item.get("id")
-        if not id_gnt:
-            return False
-        
-        page = session.page
-        frame = None
-        
-        # Tìm frame chứa form giấy nộp tiền
-        try:
-            frames = page.frames
-            for f in frames:
-                if 'thuedientu.gdt.gov.vn' in f.url and 'etaxnnt' in f.url:
-                    frame = f
-                    break
-        except:
-            pass
-        
-        if not frame:
-            logger.error(f"Không tìm thấy frame để download giấy nộp tiền {id_gnt}")
-            return False
-        
-        # Lấy tham số từ form reportForm
-        form_params = {}
-        try:
-            form = frame.locator('form[name="reportForm"], form#reportForm').first
-            if await form.count() > 0:
-                inputs = form.locator('input[type="hidden"]')
-                input_count = await inputs.count()
-                for i in range(input_count):
-                    try:
-                        input_elem = inputs.nth(i)
-                        name = await input_elem.get_attribute('name')
-                        value = await input_elem.get_attribute('value')
-                        if name and value:
-                            form_params[name] = value
-                    except:
-                        continue
-        except Exception as e:
-            logger.warning(f"Lỗi khi lấy tham số từ form cho {id_gnt}: {e}")
-        
-        # Lấy các tham số cần thiết
-        dse_session_id = form_params.get('dse_sessionId', session.dse_session_id)
-        dse_application_id = form_params.get('dse_applicationId', '-1')
-        dse_operation_name = form_params.get('dse_operationName', 'corpQueryTaxProc')
-        dse_page_id = form_params.get('dse_pageId', '35')
-        dse_processor_state = form_params.get('dse_processorState', 'viewQueryPage')
-        dse_processor_id = form_params.get('dse_processorId', '')
-        
-        # Xây dựng URL download (giống khi click downloadGNT)
-        download_url = (
-            f"{BASE_URL}/etaxnnt/Request?"
-            f"dse_sessionId={dse_session_id}&"
-            f"dse_applicationId={dse_application_id}&"
-            f"dse_operationName={dse_operation_name}&"
-            f"dse_pageId={dse_page_id}&"
-            f"dse_processorState={dse_processor_state}&"
-            f"dse_processorId={dse_processor_id}&"
-            f"dse_nextEventName=download&"
-            f"ctuId={id_gnt}"
-        )
-        
-        # Thử download với retry
-        for retry in range(max_retries + 1):
-            try:
-                # Thử click link trước (nhanh hơn)
-                link_locator = item.get("link_locator")
-                if link_locator:
-                    try:
-                        async with page.expect_download(timeout=30000) as download_info:
-                            await link_locator.click()
-                        
-                        download = await download_info.value
-                        file_path = os.path.join(temp_dir, f"gnt_{id_gnt}.xml")
-                        await download.save_as(file_path)
-                        
-                        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                            logger.info(f"Downloaded giay nop tien {id_gnt} via click")
-                            return True
-                    except:
-                        pass
-                
-                # Fallback: dùng URL trực tiếp
-                new_page = None
-                try:
-                    new_page = await session.context.new_page()
-                    new_page.set_default_timeout(30000)
-                    
-                    async with new_page.expect_download(timeout=30000) as download_info:
-                        await new_page.goto(download_url, wait_until="domcontentloaded")
-                    
-                    download = await download_info.value
-                    file_path = os.path.join(temp_dir, f"gnt_{id_gnt}.xml")
-                    await download.save_as(file_path)
-                    
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                        logger.info(f"Downloaded giay nop tien {id_gnt} via URL")
-                        return True
-                except asyncio.TimeoutError:
-                    logger.warning(f"Timeout khi download giay nop tien {id_gnt}")
-                except Exception as e:
-                    logger.warning(f"Lỗi khi download giay nop tien {id_gnt} qua URL: {e}")
-                finally:
-                    if new_page:
-                        try:
-                            await new_page.close()
-                        except:
-                            pass
-                
-                # Nếu vẫn không được, thử dùng httpx (nếu có session_id từ crawl_giay_nop_tien)
-                # Note: session_id không có trong hàm này, bỏ qua httpx fallback
-                
-            except Exception as e:
-                logger.warning(f"Error downloading giaynoptien {id_gnt} (attempt {retry + 1}/{max_retries + 1}): {e}")
-                if retry < max_retries:
-                    await asyncio.sleep(1)
-        
-        return False
-    
     async def crawl_giay_nop_tien(
         self,
         session_id: str,
@@ -2330,84 +1760,27 @@ class TaxCrawlerService:
         temp_dir = tempfile.mkdtemp()
         ssid = session.dse_session_id
         
-        # Tạo thư mục screenshots cố định (không bị xóa)
-        # Lưu trong thư mục project hoặc temp với tên cố định
-        base_screenshots_dir = os.path.join(tempfile.gettempdir(), "go-soft-screenshots")
         try:
-            os.makedirs(base_screenshots_dir, exist_ok=True)
-            logger.info(f"📸 Base screenshots directory: {base_screenshots_dir}")
-        except Exception as e:
-            logger.error(f"❌ Error creating base screenshots directory: {e}")
-            base_screenshots_dir = temp_dir  # Fallback to temp_dir
-        
-        # Tạo thư mục cho session này (dùng session_id để dễ tìm)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        screenshots_dir = os.path.join(base_screenshots_dir, f"giaynoptien_{session_id[:8]}_{timestamp}")
-        try:
-            os.makedirs(screenshots_dir, exist_ok=True)
-            # Kiểm tra quyền ghi
-            test_file = os.path.join(screenshots_dir, ".test_write")
-            try:
-                with open(test_file, 'w') as f:
-                    f.write("test")
-                os.remove(test_file)
-                logger.info(f"📸 Screenshots directory created and writable: {screenshots_dir}")
-            except Exception as e:
-                logger.error(f"❌ Screenshots directory not writable: {e}")
-        except Exception as e:
-            logger.error(f"❌ Error creating screenshots directory: {e}")
-            screenshots_dir = os.path.join(temp_dir, "screenshots")
-            os.makedirs(screenshots_dir, exist_ok=True)
-            logger.warning(f"📸 Using fallback screenshots directory: {screenshots_dir}")
-        
-        try:
-            yield {"type": "info", "message": "Đang xử lý giấy nộp tiền..."}
+            yield {"type": "info", "message": "Đang navigate đến trang tra cứu giấy nộp thuế..."}
             
             # Navigate đến trang giấy nộp tiền qua connectSSO (giống tờ khai)
             success = await self._navigate_to_giaynoptien_page(page, ssid)
             
             if not success:
-                # Chụp màn hình khi navigate thất bại
-                try:
-                    screenshot_path = os.path.join(screenshots_dir, "01_navigate_failed.png")
-                    logger.info(f"Attempting to save screenshot to: {screenshot_path}")
-                    await page.screenshot(path=screenshot_path, full_page=True)
-                    if os.path.exists(screenshot_path):
-                        file_size = os.path.getsize(screenshot_path)
-                        logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                    else:
-                        logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                except Exception as e:
-                    logger.error(f"❌ Error saving screenshot 01_navigate_failed: {e}")
                 yield {"type": "error", "error": "Không thể navigate đến trang tra cứu giấy nộp thuế. Vui lòng thử lại.", "error_code": "NAVIGATION_ERROR"}
                 return
             
             # Tìm frame từ iframe SSO (giống tờ khai)
-            # Đợi frame xuất hiện trong page.frames (có thể mất thời gian)
             frame = None
-            max_wait = 30  # Đợi tối đa 15 giây (30 * 0.5)
-            for i in range(max_wait):
             try:
                 frames = page.frames
                 for f in frames:
-                        if 'thuedientu.gdt.gov.vn' in f.url and 'etaxnnt' in f.url:
+                    if 'thuedientu.gdt.gov.vn' in f.url:
                         frame = f
                         logger.info(f"Found frame for giaynoptien: {frame.url[:100]}...")
-                            # Kiểm tra xem frame đã load chưa
-                            try:
-                                await frame.wait_for_load_state('domcontentloaded', timeout=2000)
-                                break
-                            except:
-                                # Frame chưa load xong, tiếp tục đợi
-                                frame = None
-                                pass
-                    
-                    if frame:
                         break
             except Exception as e:
-                    logger.debug(f"Waiting for frame (attempt {i + 1}/{max_wait}): {e}")
-                
-                await asyncio.sleep(0.5)
+                logger.warning(f"Error finding frame: {e}")
             
             if not frame:
                 yield {"type": "error", "error": "Không tìm thấy iframe sau khi navigate. Vui lòng thử lại.", "error_code": "NAVIGATION_ERROR"}
@@ -2419,33 +1792,8 @@ class TaxCrawlerService:
                 await asyncio.sleep(1)
                 await frame.wait_for_selector('input[name="ngay_lap_tu_ngay"], #ngay_lap_tu_ngay', timeout=15000)
                 logger.info("Tra cuu giay nop tien form loaded successfully")
-                
-                # Chụp màn hình sau khi form load
-                try:
-                    screenshot_path = os.path.join(screenshots_dir, "02_form_loaded.png")
-                    logger.info(f"Attempting to save screenshot to: {screenshot_path}")
-                    await page.screenshot(path=screenshot_path, full_page=True)
-                    if os.path.exists(screenshot_path):
-                        file_size = os.path.getsize(screenshot_path)
-                        logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                    else:
-                        logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                except Exception as e:
-                    logger.error(f"❌ Error saving screenshot 02_form_loaded: {e}")
             except Exception as e:
                 logger.warning(f"Frame found but form not found: {e}")
-                # Chụp màn hình khi form không load được
-                try:
-                    screenshot_path = os.path.join(screenshots_dir, "02_form_not_found.png")
-                    logger.info(f"Attempting to save screenshot to: {screenshot_path}")
-                    await page.screenshot(path=screenshot_path, full_page=True)
-                    if os.path.exists(screenshot_path):
-                        file_size = os.path.getsize(screenshot_path)
-                        logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                    else:
-                        logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                except Exception as e:
-                    logger.error(f"❌ Error saving screenshot 02_form_not_found: {e}")
                 yield {"type": "error", "error": "Không tìm thấy form tra cứu giấy nộp tiền. Vui lòng thử lại.", "error_code": "NAVIGATION_ERROR"}
                 return
             
@@ -2495,37 +1843,12 @@ class TaxCrawlerService:
                     
                     await asyncio.sleep(2)
                     
-                    # Chụp màn hình sau khi search
-                    try:
-                        screenshot_path = os.path.join(screenshots_dir, f"03_after_search_{range_idx}.png")
-                        logger.debug(f"Attempting to save screenshot to: {screenshot_path}")
-                        await page.screenshot(path=screenshot_path, full_page=True)
-                        if os.path.exists(screenshot_path):
-                            file_size = os.path.getsize(screenshot_path)
-                            logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                        else:
-                            logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                    except Exception as e:
-                        logger.error(f"❌ Error saving screenshot 03_after_search: {e}")
-                    
                     # Kiểm tra kết quả tìm kiếm
                     # Nếu có data: có <div class="tab-content">
                     # Nếu không có: có <div align="center"><strong>Không có dữ liệu</strong></div>
                     try:
                         no_data_div = frame.locator('div[align="center"] strong:has-text("Không có dữ liệu")')
                         if await no_data_div.count() > 0:
-                            # Chụp màn hình khi không có data
-                            try:
-                                screenshot_path = os.path.join(screenshots_dir, f"04_no_data_{range_idx}.png")
-                                logger.debug(f"Attempting to save screenshot to: {screenshot_path}")
-                                await page.screenshot(path=screenshot_path, full_page=True)
-                                if os.path.exists(screenshot_path):
-                                    file_size = os.path.getsize(screenshot_path)
-                                    logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                                else:
-                                    logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                            except Exception as e:
-                                logger.error(f"❌ Error saving screenshot 04_no_data: {e}")
                             yield {"type": "info", "message": f"Không có giấy nộp thuế trong khoảng {date_range[0]} - {date_range[1]}"}
                             continue
                     except:
@@ -2536,18 +1859,6 @@ class TaxCrawlerService:
                         tab_content = frame.locator('div.tab-content')
                         tab_content_count = await tab_content.count()
                         if tab_content_count == 0:
-                            # Chụp màn hình khi không có tab-content
-                            try:
-                                screenshot_path = os.path.join(screenshots_dir, f"04_no_tab_content_{range_idx}.png")
-                                logger.debug(f"Attempting to save screenshot to: {screenshot_path}")
-                                await page.screenshot(path=screenshot_path, full_page=True)
-                                if os.path.exists(screenshot_path):
-                                    file_size = os.path.getsize(screenshot_path)
-                                    logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                                else:
-                                    logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                            except Exception as e:
-                                logger.error(f"❌ Error saving screenshot 04_no_tab_content: {e}")
                             yield {"type": "info", "message": f"Không có giấy nộp thuế trong khoảng {date_range[0]} - {date_range[1]}"}
                             continue
                     except:
@@ -2567,21 +1878,6 @@ class TaxCrawlerService:
                         
                         rows = table_body.locator('tr')
                         row_count = await rows.count()
-                        
-                        logger.info(f"Found {row_count} rows in giaynoptien table")
-                        
-                        # Chụp màn hình khi có data
-                        try:
-                            screenshot_path = os.path.join(screenshots_dir, f"05_table_with_data_{range_idx}.png")
-                            logger.debug(f"Attempting to save screenshot to: {screenshot_path}")
-                            await page.screenshot(path=screenshot_path, full_page=True)
-                            if os.path.exists(screenshot_path):
-                                file_size = os.path.getsize(screenshot_path)
-                                logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                            else:
-                                logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                        except Exception as e:
-                            logger.error(f"❌ Error saving screenshot 05_table_with_data: {e}")
                         
                         yield {"type": "progress", "current": total_count, "message": f"Đang xử lý {row_count} giấy nộp thuế..."}
                         
@@ -2656,13 +1952,13 @@ class TaxCrawlerService:
                                 
                                 yield {"type": "item", "data": result}
                                 
-                                # Download từ các cột 17-20 (cột 19 là cột # có link downloadGNT)
+                                # Download từ các cột 17-20
                                 download_link_found = False
                                 for col_idx in [17, 18, 19, 20]:
                                     if col_count > col_idx and not download_link_found:
                                         try:
                                             # Check xem có link downloadGNT không
-                                            links = cols.nth(col_idx).locator('a[href*="downloadGNT"], a[onclick*="downloadGNT"]')
+                                            links = cols.nth(col_idx).locator('a[href*="downloadGNT"]')
                                             link_count = await links.count()
                                             if link_count > 0:
                                                 download_queue.append({
@@ -2672,21 +1968,9 @@ class TaxCrawlerService:
                                                     "link_locator": links.first
                                                 })
                                                 download_link_found = True
-                                                logger.info(f"Found download link for giaynoptien {id_gnt} in column {col_idx}")
                                                 break  # Chỉ cần 1 link download
-                                        except Exception as e:
-                                            logger.debug(f"Error checking column {col_idx} for download link: {e}")
+                                        except:
                                             pass
-                                
-                                if not download_link_found:
-                                    logger.warning(f"No download link found for giaynoptien {id_gnt}, will try URL method")
-                                    # Vẫn thêm vào queue để thử download bằng URL
-                                    download_queue.append({
-                                        "id": id_gnt,
-                                        "row": row,
-                                        "col_index": None,
-                                        "link_locator": None
-                                    })
                                 
                                 i += 1
                             
@@ -2696,22 +1980,6 @@ class TaxCrawlerService:
                                 continue
                         
                         # Download từng file và yield progress
-                        logger.info(f"Download queue has {len(download_queue)} items, page_valid_count: {page_valid_count}")
-                        
-                        # Chụp màn hình trước khi download
-                        if download_queue:
-                            try:
-                                screenshot_path = os.path.join(screenshots_dir, f"06_before_download_{range_idx}.png")
-                                logger.debug(f"Attempting to save screenshot to: {screenshot_path}")
-                                await page.screenshot(path=screenshot_path, full_page=True)
-                                if os.path.exists(screenshot_path):
-                                    file_size = os.path.getsize(screenshot_path)
-                                    logger.info(f"✅ Screenshot saved: {screenshot_path} ({file_size} bytes)")
-                                else:
-                                    logger.error(f"❌ Screenshot file not created: {screenshot_path}")
-                            except Exception as e:
-                                logger.error(f"❌ Error saving screenshot 06_before_download: {e}")
-                        
                         if download_queue:
                             queue_total = len(download_queue)
                             yield {
@@ -2722,13 +1990,9 @@ class TaxCrawlerService:
                             
                             downloaded = 0
                             for item in download_queue:
-                                logger.info(f"Attempting to download giaynoptien {item.get('id')}")
                                 success = await self._download_single_giaynoptien(session, item, temp_dir)
                                 if success:
                                     downloaded += 1
-                                    logger.info(f"Successfully downloaded giaynoptien {item.get('id')}")
-                                else:
-                                    logger.warning(f"Failed to download giaynoptien {item.get('id')}")
                                 
                                 yield {
                                     "type": "download_progress",
@@ -2745,8 +2009,6 @@ class TaxCrawlerService:
                                 "total": queue_total,
                                 "message": f"Hoàn thành tải {downloaded}/{queue_total} giấy nộp tiền"
                             }
-                        else:
-                            logger.warning(f"No download queue items found, but found {page_valid_count} valid items")
                         
                         # Chỉ cộng số items hợp lệ vào total_count
                         total_count += page_valid_count
@@ -2771,16 +2033,6 @@ class TaxCrawlerService:
             parsed_results = []
             files_in_temp_dir = os.listdir(temp_dir) if os.path.exists(temp_dir) else []
             logger.info(f"crawl_giay_nop_tien: Found {len(files_in_temp_dir)} files in temp_dir")
-            
-            # Log thông tin screenshots
-            if screenshots_dir and os.path.exists(screenshots_dir):
-                screenshot_list = os.listdir(screenshots_dir)
-                logger.info(f"📸 Screenshots saved: {len(screenshot_list)} files in {screenshots_dir}")
-                logger.info(f"📸 Screenshots directory: {screenshots_dir}")
-                for screenshot_file in sorted(screenshot_list):
-                    screenshot_path = os.path.join(screenshots_dir, screenshot_file)
-                    file_size = os.path.getsize(screenshot_path) if os.path.exists(screenshot_path) else 0
-                    logger.info(f"  📷 {screenshot_file} ({file_size} bytes)")
             
             if files_in_temp_dir:
                 nnn = 0
@@ -2893,10 +2145,7 @@ class TaxCrawlerService:
                 yield {"type": "error", "error": f"Lỗi khi tra cứu giấy nộp tiền: {error_msg}", "error_code": "CRAWL_ERROR"}
         
         finally:
-            # Screenshots đã được lưu ở thư mục riêng (ngoài temp_dir), không bị xóa
-            # Chỉ xóa temp_dir (chứa các file tạm khác)
             shutil.rmtree(temp_dir, ignore_errors=True)
-            logger.info(f"📸 Screenshots are saved permanently at: {screenshots_dir}")
     
     _gnt_download_counter = 0  # Class-level counter for unique file names
     

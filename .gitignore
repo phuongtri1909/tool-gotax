@@ -4,3 +4,4 @@ shared/__pycache__
 tool-go-quick/datatest/
 tool-go-soft-backup/
 shared/__pycache__/*.pyc
+supervisor/

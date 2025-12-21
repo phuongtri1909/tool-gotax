@@ -1260,6 +1260,155 @@ class DetectWorker():
                     publish_progress_func(self.job_id, percent, message, 
                                        total_cccd=self.total_cccd, processed_cccd=saved_processed_cccd)
 
+    def collect_cus_info(self):
+        """Parse OCR results từ goc_dict thành customer objects"""
+        print("4.Collect customer info")
+        
+        # Đọc OCR results từ file
+        ocr_result_file = os.path.join(self.work_md4, 'ocr_results.txt')
+        if not os.path.exists(ocr_result_file):
+            print(f"⚠️ OCR result file không tồn tại: {ocr_result_file}")
+            return {
+                "status": "error",
+                "message": "Không tìm thấy dữ liệu OCR",
+                "customer": [],
+                "total_cccd": 0
+            }
+        
+        # Đọc và parse OCR data
+        ocr_data = []
+        try:
+            with open(ocr_result_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split('\t', 1)
+                    if len(parts) == 2:
+                        crop_name, text = parts
+                        ocr_data.append((crop_name, text))
+        except Exception as e:
+            print(f"⚠️ Lỗi đọc OCR file: {e}")
+            return {
+                "status": "error",
+                "message": f"Lỗi đọc dữ liệu OCR: {str(e)}",
+                "customer": [],
+                "total_cccd": 0
+            }
+        
+        if not ocr_data:
+            print(f"⚠️ Không có OCR data trong file: {ocr_result_file}")
+            return {
+                "status": "error",
+                "message": "Không có dữ liệu OCR",
+                "customer": [],
+                "total_cccd": 0
+            }
+        
+        print(f"📊 Đã đọc {len(ocr_data)} OCR records")
+        
+        # Build goc_dict từ OCR data
+        goc_dict = {}
+        for crop_name, text in ocr_data:
+            parts = crop_name.replace('.jpg', '').split('-')
+            goc_name = parts[0]
+            try:
+                label = parts[1]  # id, name, sn, etc.
+            except:
+                label = parts[2] if len(parts) > 2 else 'unknown'
+            if goc_name not in goc_dict:
+                goc_dict[goc_name] = []
+            if label == "noi_cap":
+                text = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
+            goc_dict[goc_name].append((label, text))
+        
+        print(f"📊 Đã build goc_dict với {len(goc_dict)} goc_name")
+        
+        # Parse thành customer objects
+        customers = []
+        cccd_dict = {}  # {base_name: customer_dict}
+        
+        for goc_name, infos in goc_dict.items():
+            # Extract base_name từ goc_name (bỏ mt/ms)
+            if goc_name.lower().endswith('mt'):
+                base_name = goc_name[:-2]
+                side = 'mt'
+            elif goc_name.lower().endswith('ms'):
+                base_name = goc_name[:-2]
+                side = 'ms'
+            else:
+                base_name = goc_name
+                side = 'unknown'
+            
+            # Tạo hoặc lấy customer object
+            if base_name not in cccd_dict:
+                cccd_dict[base_name] = {
+                    "id_card": "",
+                    "name": "",
+                    "birth_date": "",
+                    "gender": "",
+                    "nationality": "Việt Nam",
+                    "hometown": "",
+                    "address": "",
+                    "issue_date": "",
+                    "issue_place": "",
+                    "created_date": "",  # Alias cho frontend
+                    "place_created": ""   # Alias cho frontend
+                }
+            
+            customer = cccd_dict[base_name]
+            
+            # Parse các field từ OCR results
+            for label, text in infos:
+                text = text.strip()
+                if not text:
+                    continue
+                
+                # Map label từ OCR sang customer field
+                if label == "id":
+                    customer["id_card"] = text
+                elif label == "name":
+                    customer["name"] = text
+                elif label == "sn":
+                    customer["birth_date"] = text
+                elif label == "gioi_tinh":
+                    customer["gender"] = text
+                elif label == "que_quan":
+                    customer["hometown"] = text
+                elif label == "thuong_tru" or label == "thuong_tru2":
+                    if not customer["address"]:
+                        customer["address"] = text
+                    else:
+                        customer["address"] += ", " + text
+                elif label == "ngay_cap":
+                    customer["issue_date"] = text
+                    customer["created_date"] = text  # Alias cho frontend
+                elif label == "noi_cap":
+                    customer["issue_place"] = text
+                    customer["place_created"] = text  # Alias cho frontend
+        
+        # Convert dict thành list
+        customers = list(cccd_dict.values())
+        
+        print(f"📊 Đã parse {len(customers)} customer objects từ {len(cccd_dict)} base_name")
+        
+        # Filter out empty customers (không có id_card hoặc name)
+        customers_filtered = [c for c in customers if c.get("id_card") or c.get("name")]
+        
+        print(f"📊 Sau filter: {len(customers_filtered)} customers (có id_card hoặc name)")
+        
+        if len(customers_filtered) == 0 and len(customers) > 0:
+            # Nếu filter quá strict, thử lấy tất cả customers có ít nhất 1 field
+            customers_filtered = [c for c in customers if any(c.values())]
+            print(f"📊 Sau filter lenient: {len(customers_filtered)} customers (có ít nhất 1 field)")
+        
+        return {
+            "status": "success",
+            "message": f"Đã xử lý {len(customers_filtered)} CCCD",
+            "customer": customers_filtered,
+            "total_cccd": len(customers_filtered)
+        }
+
     def detect_corners(self):
         print("2.Detect corners")
         folder = self.work_md1

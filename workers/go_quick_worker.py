@@ -260,13 +260,24 @@ async def process_go_quick_job(job_data):
         redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
         publish_progress(job_id, 0, error_msg)
     finally:
-        # Cleanup: Delete temp file
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logger.info(f"[Job {job_id}] Đã xóa temp file: {file_path}")
         except Exception as e:
             logger.warning(f"[Job {job_id}] Không thể xóa temp file: {e}")
+        
+        try:
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except:
+                pass
+        except:
+            pass
 
 async def process_job_wrapper(job_data):
     """Wrapper để xử lý job trong background task"""
@@ -286,7 +297,7 @@ async def main():
     
     # Set để track các tasks đang chạy
     running_tasks = set()
-    max_concurrent_jobs = 10  # Số lượng jobs tối đa chạy cùng lúc
+    max_concurrent_jobs = 10  # Số lượng jobs tối đa chạy cùng lúc (giảm từ 10 xuống 3 để tránh hết memory)
     
     while True:
         try:

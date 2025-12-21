@@ -137,6 +137,21 @@ class DetectWorker():
                 return results
         finally:
             self.cleanup_temp_dirs()
+            try:
+                import gc
+                if not self.cached_models:
+                    self.model1 = None
+                    self.model2 = None
+                    self.model3 = None
+                    self.vietocr_detector = None
+                gc.collect()
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except:
+                    pass
+            except:
+                pass
     def pdf_to_png(self, pdf_bytes_input):
         """
         Convert PDF bytes to PNG images

@@ -11,3 +11,5 @@ __pycache__/
 *.pywz
 *.pyzw
 *.xml
+/temp
+/screenshot

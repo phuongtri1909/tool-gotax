@@ -116,10 +116,32 @@ async def process_go_soft_job(job_data):
             )
             
             if response.status_code != 200:
+                # ✅ Parse error response từ API để lấy error_code và message
                 error_msg = f"API server trả về lỗi: {response.status_code}"
-                logger.error(f"[Job {job_id}] {error_msg}")
+                error_code = None
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('message', error_msg)
+                    error_code = error_data.get('error_code', None)
+                    
+                    # Nếu là session error, thêm thông tin rõ ràng
+                    if error_code in ['SESSION_NOT_FOUND', 'SESSION_EXPIRED', 'NOT_LOGGED_IN', 'MISSING_SESSION_ID']:
+                        error_msg = error_data.get('message', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+                        logger.warning(f"[Job {job_id}] Session error ({error_code}): {error_msg}")
+                    else:
+                        logger.error(f"[Job {job_id}] {error_msg} (error_code: {error_code})")
+                except:
+                    logger.error(f"[Job {job_id}] {error_msg} (không parse được error response)")
+                
+                # Publish error event với error_code để frontend xử lý
+                error_event = {
+                    'type': 'error',
+                    'error': error_msg,
+                    'error_code': error_code
+                }
+                publish_progress(job_id, 0, error_msg, error_event)
                 redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
-                publish_progress(job_id, 0, error_msg)
+                redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
                 return
             
             response_data = response.json()
@@ -145,10 +167,25 @@ async def process_go_soft_job(job_data):
             await asyncio.sleep(poll_interval)
             waited_time += poll_interval
             
+            # ✅ Check cancelled flag trước
+            cancelled = redis_client.get(f"job:{job_id}:cancelled")
+            if cancelled:
+                cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                if cancelled == '1':
+                    logger.info(f"[Job {job_id}] Job đã bị cancel, dừng worker")
+                    redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                    publish_progress(job_id, 0, "Job đã bị hủy")
+                    return
+            
             # Check job status
             status = redis_client.get(f"job:{job_id}:status")
             if status:
                 status = status.decode('utf-8') if isinstance(status, bytes) else str(status).strip()
+                
+                if status == 'cancelled':
+                    logger.info(f"[Job {job_id}] Job đã bị cancel")
+                    publish_progress(job_id, 0, "Job đã bị hủy")
+                    return
                 
                 if status == 'completed':
                     # Lấy result từ Redis (API đã lưu)
@@ -329,7 +366,20 @@ async def worker_loop(redis_client, semaphore, max_concurrent=3):
             logger.info("⏹️ Worker dừng bởi người dùng")
             if active_tasks:
                 logger.info(f"⏳ Đang chờ {len(active_tasks)} task hoàn thành...")
-                await asyncio.gather(*active_tasks, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*active_tasks, return_exceptions=True),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.info("⏹️ Timeout khi đợi tasks, đang cancel...")
+                    for task in active_tasks:
+                        if not task.done():
+                            task.cancel()
+            break
+        except asyncio.CancelledError:
+            # Suppress CancelledError khi shutdown
+            logger.info("⏹️ Worker đã được cancel")
             break
         except Exception as e:
             logger.error(f"❌ Lỗi trong worker loop: {e}")
@@ -360,7 +410,12 @@ def main():
     try:
         asyncio.run(worker_loop(redis_client, semaphore, max_concurrent=max_concurrent))
     except KeyboardInterrupt:
+        # Suppress KeyboardInterrupt ở level này
         logger.info("⏹️ Worker đã dừng")
+    except Exception as e:
+        # Chỉ log các exception thực sự, không phải CancelledError
+        if not isinstance(e, (asyncio.CancelledError, KeyboardInterrupt)):
+            logger.error(f"❌ Fatal error: {e}", exc_info=True)
 
 if __name__ == '__main__':
     main()

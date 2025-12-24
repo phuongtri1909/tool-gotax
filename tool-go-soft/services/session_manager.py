@@ -29,6 +29,7 @@ class SessionData:
     is_logged_in: bool = False
     dse_session_id: Optional[str] = None
     cookies: Dict[str, str] = field(default_factory=dict)
+    jsessionid: Optional[str] = None  # JSESSIONID sau khi login thành công (để check session validity)
     download_path: Optional[str] = None  # Folder để lưu file download
     
     def update_activity(self):
@@ -445,6 +446,7 @@ class SessionManager:
                     session.username = username
                     session.is_logged_in = True
                     session.dse_session_id = None
+                    session.jsessionid = jsessionid_after  # ✅ Lưu JSESSIONID sau khi login thành công
                     
                     
                     return {
@@ -508,6 +510,7 @@ class SessionManager:
                     
                     session.username = username
                     session.is_logged_in = True
+                    session.jsessionid = jsessionid_after  # ✅ Lưu JSESSIONID sau khi login thành công (status 201)
                     
                     
                     return {
@@ -549,6 +552,85 @@ class SessionManager:
         session.cookies = {c['name']: c['value'] for c in cookies}
         
         return session.cookies
+    
+    async def check_session_validity(self, session_id: str) -> Dict[str, Any]:
+        """
+        Check xem session còn valid không bằng cách so sánh JSESSIONID hiện tại với JSESSIONID đã lưu
+        
+        Returns:
+            {
+                "valid": True/False,
+                "error": "error message" (nếu không valid),
+                "error_code": "SESSION_EXPIRED" (nếu session hết hạn)
+            }
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return {
+                "valid": False,
+                "error": "Session not found",
+                "error_code": "SESSION_NOT_FOUND"
+            }
+        
+        if not session.is_logged_in:
+            return {
+                "valid": False,
+                "error": "Not logged in",
+                "error_code": "NOT_LOGGED_IN"
+            }
+        
+        # Nếu chưa có JSESSIONID đã lưu (chưa login lần nào) → không thể check
+        if not session.jsessionid:
+            logger.warning(f"Session {session_id} has no saved JSESSIONID - cannot verify validity")
+            return {
+                "valid": True,  # Cho phép tiếp tục nếu chưa có JSESSIONID đã lưu
+                "error": None
+            }
+        
+        try:
+            # Lấy JSESSIONID hiện tại từ browser cookies
+            cookies = await session.context.cookies()
+            current_jsessionid = None
+            for cookie in cookies:
+                if cookie.get('name') == 'JSESSIONID':
+                    current_jsessionid = cookie.get('value')
+                    break
+            
+            logger.info(f"JSESSIONID BEFORE check: {session.jsessionid[:30] if session.jsessionid else None}...")
+            logger.info(f"JSESSIONID CURRENT: {current_jsessionid[:30] if current_jsessionid else None}...")
+            
+            # So sánh JSESSIONID
+            if current_jsessionid:
+                if current_jsessionid == session.jsessionid:
+                    logger.info("JSESSIONID unchanged - session is still valid")
+                    return {
+                        "valid": True,
+                        "error": None
+                    }
+                else:
+                    logger.warning(f"JSESSIONID changed: {session.jsessionid[:30] if session.jsessionid else None}... → {current_jsessionid[:30]}...")
+                    logger.warning("JSESSIONID changed indicates session expired - need to login again")
+                    return {
+                        "valid": False,
+                        "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                        "error_code": "SESSION_EXPIRED"
+                    }
+            else:
+                # Không tìm thấy JSESSIONID trong cookies → session đã hết hạn
+                logger.warning("JSESSIONID not found in cookies - session expired")
+                return {
+                    "valid": False,
+                    "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                    "error_code": "SESSION_EXPIRED"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error checking session validity: {e}")
+            # Nếu có lỗi khi check, cho phép tiếp tục (fail-safe)
+            return {
+                "valid": True,
+                "error": None
+            }
     
     async def navigate_to_search(self, session_id: str, search_type: str = "tokhai") -> Dict[str, Any]:
         session = self.get_session(session_id)

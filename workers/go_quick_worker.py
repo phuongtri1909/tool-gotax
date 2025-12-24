@@ -336,13 +336,34 @@ async def main():
                 
         except KeyboardInterrupt:
             logger.info("⏹️ Worker dừng bởi người dùng, đợi các jobs đang chạy hoàn thành...")
-            # Đợi tất cả tasks hoàn thành
+            # Đợi tất cả tasks hoàn thành (với timeout)
             if running_tasks:
-                await asyncio.gather(*running_tasks, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*running_tasks, return_exceptions=True),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.info("⏹️ Timeout khi đợi tasks, đang cancel...")
+                    for task in running_tasks:
+                        if not task.done():
+                            task.cancel()
+            break
+        except asyncio.CancelledError:
+            # Suppress CancelledError khi shutdown
+            logger.info("⏹️ Worker đã được cancel")
             break
         except Exception as e:
             logger.error(f"❌ Error in worker loop: {e}", exc_info=True)
             await asyncio.sleep(5)  # Wait before retry
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Suppress KeyboardInterrupt ở level này
+        pass
+    except Exception as e:
+        # Chỉ log các exception thực sự, không phải CancelledError
+        if not isinstance(e, (asyncio.CancelledError, KeyboardInterrupt)):
+            logger.error(f"❌ Fatal error: {e}", exc_info=True)

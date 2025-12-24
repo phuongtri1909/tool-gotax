@@ -61,7 +61,7 @@ def check_session_exists(session_id: str) -> tuple[bool, dict]:
         return False, {
             "status": "error",
             "error_code": "SESSION_NOT_FOUND",
-            "message": "Session không tồn tại hoặc đã hết hạn. Vui lòng đăng nhập lại. 1"
+            "message": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
         }
     
     return True, None
@@ -387,10 +387,24 @@ def register_routes(app, prefix):
             if not tokhai_type or tokhai_type.strip() == "":
                 tokhai_type = "00"
             
-            # Check session exists
+            # ✅ Check session exists (nếu backend restart, session sẽ không tồn tại)
             session_exists, error_response = check_session_exists(session_id)
             if not session_exists:
-                return jsonify(error_response), 404
+                # Trả về 401 (Unauthorized) thay vì 404 để frontend biết cần login lại
+                return jsonify(error_response), 401
+            
+            # ✅ Check session validity trước khi bắt đầu crawl (giống như check trong login)
+            # Check JSESSIONID hiện tại so với JSESSIONID đã lưu
+            sm = get_session_manager()
+            session_validity = await sm.check_session_validity(session_id)
+            if not session_validity.get("valid", False):
+                error_code = session_validity.get("error_code", "SESSION_EXPIRED")
+                error_message = session_validity.get("error", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.")
+                return jsonify({
+                    "status": "error",
+                    "error_code": error_code,
+                    "message": error_message
+                }), 401
             
             # Chạy crawl trong background task và publish events vào Redis
             async def crawl_and_publish():
@@ -403,8 +417,27 @@ def register_routes(app, prefix):
                     accumulated_total = 0
                     accumulated_downloaded = 0
                     
-                    async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date):
+                    async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date, job_id=job_id):
+                        # ✅ Check cancelled trước khi xử lý event tiếp theo
+                        from shared.redis_client import get_redis_client
+                        check_redis = get_redis_client()
+                        cancelled = check_redis.get(f"job:{job_id}:cancelled")
+                        if cancelled:
+                            cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                            if cancelled == '1':
+                                logger.info(f"[API] Job {job_id} đã bị cancel, dừng crawl")
+                                check_redis.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                publish_progress(job_id, 0, "Job đã bị hủy")
+                                break
+                        
                         event_type = event.get('type', 'unknown')
+                        
+                        # ✅ Nếu event là error với JOB_CANCELLED, dừng ngay
+                        if event_type == 'error' and event.get('error_code') == 'JOB_CANCELLED':
+                            logger.info(f"[API] Job {job_id} đã bị cancel từ crawler")
+                            check_redis.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                            publish_progress(job_id, 0, "Job đã bị hủy", event)
+                            break
                         
                         if event_type == 'progress':
                             percent = event.get('percent', 0)
@@ -413,7 +446,19 @@ def register_routes(app, prefix):
                             
                         elif event_type == 'info':
                             message = event.get('message', '')
-                            publish_progress(job_id, 0, message)
+                            # ✅ Forward accumulated_percent và các field khác từ event để không reset về 0%
+                            percent = event.get('accumulated_percent', event.get('percent', 0))
+                            if isinstance(percent, float):
+                                percent = int(percent)
+                            publish_progress(job_id, percent, message, event)
+                            
+                        elif event_type == 'special_items':
+                            # ✅ Forward accumulated_percent và các field khác từ event để không reset về 0%
+                            percent = event.get('accumulated_percent', event.get('percent', 0))
+                            if isinstance(percent, float):
+                                percent = int(percent)
+                            message = event.get('message', '')
+                            publish_progress(job_id, percent, message, event)
                             
                         elif event_type == 'download_start':
                             total = event.get('accumulated_total', event.get('total', 0))
@@ -425,37 +470,67 @@ def register_routes(app, prefix):
                             total = event.get('accumulated_total', event.get('total', 0))
                             accumulated_total = total
                             accumulated_downloaded = current
-                            percent = int((current / total) * 100) if total > 0 else 0
-                            publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                            # ✅ Dùng % tích lũy từ event (không tính lại để tránh thụt lùi)
+                            percent = event.get('accumulated_percent', event.get('percent', 0))
+                            if isinstance(percent, float):
+                                percent = int(percent)
+                            
+                            # ✅ Lấy thông tin tờ thuyết minh từ event
+                            thuyet_minh_downloaded = event.get('thuyet_minh_downloaded', 0)
+                            thuyet_minh_total = event.get('thuyet_minh_total', 0)
+                            
+                            # ✅ Tạo message với tờ thuyết minh nếu có
+                            if thuyet_minh_total > 0:
+                                message = f"Đã tải {current}/{total} file - {thuyet_minh_downloaded}/{thuyet_minh_total} tm"
+                            else:
+                                message = f"Đã tải {current}/{total} file"
+                            
+                            # ✅ Thêm TẤT CẢ thông tin cần thiết vào event data để frontend nhận được
+                            event['accumulated_percent'] = percent
+                            event['accumulated_total'] = accumulated_total
+                            event['accumulated_downloaded'] = accumulated_downloaded
+                            event['thuyet_minh_downloaded'] = thuyet_minh_downloaded
+                            event['thuyet_minh_total'] = thuyet_minh_total
+                            
+                            # LOG: Kiểm tra event trước khi publish
+                            logger.info(f"[API] download_progress event before publish: accumulated_percent={event.get('accumulated_percent')}, accumulated_total={event.get('accumulated_total')}, accumulated_downloaded={event.get('accumulated_downloaded')}, thuyet_minh_downloaded={event.get('thuyet_minh_downloaded')}, thuyet_minh_total={event.get('thuyet_minh_total')}")
+                            
+                            publish_progress(job_id, percent, message, event)
                             
                         elif event_type == 'item':
                             results.append(event.get('data'))
                             
                         elif event_type == 'complete':
-                            total_from_event = event.get('total', 0)
+                            # ✅ Số file đã tải = tờ khai + tờ thuyết minh (từ event complete)
+                            total_from_event = event.get('total', 0)  # Đây là total_files_downloaded từ backend
                             download_id = event.get('download_id')
                             zip_filename = event.get('zip_filename')
                             
-                            if accumulated_total > 0:
-                                total_count = accumulated_total
-                            else:
-                                total_count = total_from_event
+                            # ✅ LUÔN dùng total_from_event (số file đã tải), KHÔNG dùng accumulated_total (tổng tìm thấy)
+                            total_count = total_from_event
                             
                             # Publish complete event
                             from shared.redis_client import get_redis_client
                             redis_client = get_redis_client()
                             
                             result_data = {
-                                'total': total_count,
+                                'total': total_count,  # ✅ Số file đã tải (tờ khai + tờ thuyết minh)
                                 'zip_filename': zip_filename,
                                 'has_zip': False,
-                                'download_id': download_id
+                                'download_id': download_id,
+                                # ✅ Forward thêm các field từ event để frontend có thể hiển thị chi tiết
+                                'tokhai_downloaded': event.get('tokhai_downloaded'),
+                                'tokhai_total': event.get('tokhai_total'),
+                                'thuyet_minh_downloaded': event.get('thuyet_minh_downloaded'),
+                                'thuyet_minh_total': event.get('thuyet_minh_total'),
+                                'special_items_count': event.get('special_items_count'),
+                                'message': event.get('message')
                             }
                             redis_client.set(f"job:{job_id}:result", json.dumps(result_data).encode('utf-8'))
                             redis_client.set(f"job:{job_id}:status", "completed".encode('utf-8'))
                             
                             publish_progress(job_id, 100, "Hoàn thành crawl", event)
-                            logger.info(f"[API] Job {job_id} completed: {total_count} file, download_id: {download_id}")
+                            logger.info(f"[API] Job {job_id} completed: {total_count} file (tokhai: {event.get('tokhai_downloaded', 0)}, thuyet_minh: {event.get('thuyet_minh_downloaded', 0)}), download_id: {download_id}")
                             
                         elif event_type == 'error':
                             error_msg = event.get('error', 'Lỗi không xác định')
@@ -1447,3 +1522,4 @@ def register_routes(app, prefix):
                 "status": "error",
                 "message": str(e)
             }), 500
+

@@ -50,7 +50,7 @@ BASE_URL = "https://thuedientu.gdt.gov.vn"
 
 class TaxCrawlerService:
     # Thư mục tạm để lưu zip files (sẽ được worker download)
-    ZIP_STORAGE_DIR = os.path.join(tempfile.gettempdir(), 'go-soft-zips')
+    ZIP_STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'temp')
     
     def __init__(self, session_manager: SessionManager):
         self.session_manager = session_manager
@@ -93,6 +93,33 @@ class TaxCrawlerService:
         if session_id in self._http_clients:
             await self._http_clients[session_id].aclose()
             del self._http_clients[session_id]
+    
+    async def _check_cancelled(self, job_id: str) -> bool:
+        """
+        Kiểm tra xem job có bị cancel không
+        
+        Returns:
+            True nếu job bị cancel, False nếu không
+        """
+        try:
+            from shared.redis_client import get_redis_client
+            redis_client = get_redis_client()
+            cancelled = redis_client.get(f"job:{job_id}:cancelled")
+            if cancelled:
+                cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                if cancelled == '1':
+                    return True
+            
+            # Check status
+            status = redis_client.get(f"job:{job_id}:status")
+            if status:
+                status = status.decode('utf-8') if isinstance(status, bytes) else str(status).strip()
+                if status == 'cancelled':
+                    return True
+            return False
+        except Exception as e:
+            logger.warning(f"Error checking cancelled flag: {e}")
+            return False
     
     async def _check_session_timeout(self, page) -> bool:
         """
@@ -148,6 +175,17 @@ class TaxCrawlerService:
         
         return date_ranges
     
+    def _calculate_days_between(self, start_date: str, end_date: str) -> int:
+        """Tính số ngày giữa 2 ngày (format: DD/MM/YYYY)"""
+        date_format = "%d/%m/%Y"
+        try:
+            date1 = datetime.strptime(start_date, date_format)
+            date2 = datetime.strptime(end_date, date_format)
+            return (date2 - date1).days + 1  # +1 để tính cả ngày cuối
+        except Exception as e:
+            logger.warning(f"Error calculating days between {start_date} and {end_date}: {e}")
+            return 0
+    
     def _normalize_tokhai_name(self, name_tk: str) -> str:
         """Chuẩn hóa tên tờ khai"""
         if "TỜ KHAI QUYẾT TOÁN THUẾ THU NHẬP CÁ NHÂN" in name_tk:
@@ -192,14 +230,14 @@ class TaxCrawlerService:
             try:
                 # Đảm bảo navigate đến đúng URL (không phải homelogin)
                 target_url = 'https://dichvucong.gdt.gov.vn/tthc/dich-vu-khac'
-            current_url = page.url
+                current_url = page.url
                 
                 # Nếu đang ở homelogin hoặc URL khác, navigate lại
-            if '/tthc/dich-vu-khac' not in current_url:
+                if '/tthc/dich-vu-khac' not in current_url:
                     await page.goto(target_url, wait_until='domcontentloaded', timeout=30000)
-                await asyncio.sleep(2)
+                    await asyncio.sleep(2)
                     logger.info(f"Successfully navigated to dich-vu-khac, current URL: {page.url}")
-            else:
+                else:
                     logger.info(f"Already on dich-vu-khac page: {current_url}")
             except Exception as nav_err:
                 logger.error(f"Error navigating to dich-vu-khac: {nav_err}")
@@ -442,18 +480,18 @@ class TaxCrawlerService:
             for i in range(max_wait):
                 try:
                     # Tìm frame từ page.frames trực tiếp
-                            frames = page.frames
-                            for f in frames:
+                    frames = page.frames
+                    for f in frames:
                         if 'thuedientu.gdt.gov.vn' in f.url and 'etaxnnt' in f.url:
-                                    frame = f
-                                    logger.info(f"Found frame: {frame.url[:100]}...")
-                                    break
-                            
-                            if frame:
+                            frame = f
+                            logger.info(f"Found frame: {frame.url[:100]}...")
+                            break
+                    
+                    if frame:
                         # Kiểm tra xem frame đã load chưa
                         try:
                             await frame.wait_for_load_state('domcontentloaded', timeout=2000)
-                                break
+                            break
                         except:
                             # Frame chưa load xong, tiếp tục đợi
                             frame = None
@@ -730,6 +768,7 @@ class TaxCrawlerService:
         tokhai_type: str,
         start_date: str,
         end_date: str,
+        job_id: Optional[str] = None,  # ✅ Thêm job_id để check cancelled
     ) -> AsyncGenerator[Dict[str, Any], None]:
         session = self.session_manager.get_session(session_id)
         if not session:
@@ -741,7 +780,20 @@ class TaxCrawlerService:
             return
         
         page = session.page
-        temp_dir = tempfile.mkdtemp()
+        
+        # ✅ FIX: Tạo temp directory trong source code thay vì system temp
+        # Lấy đường dẫn project (tool-go-soft)
+        current_dir = os.path.dirname(os.path.abspath(__file__))  # .../services/
+        services_dir = os.path.dirname(current_dir)  # .../tool-go-soft/
+        temp_base_dir = os.path.join(services_dir, "temp")  # .../tool-go-soft/temp/
+        os.makedirs(temp_base_dir, exist_ok=True)
+        
+        # Tạo temp directory với timestamp để tránh conflict
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        temp_dir = os.path.join(temp_base_dir, f"tokhai_{timestamp}")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        logger.info(f"📁 Temp directory for debug files: {temp_dir}")  # ✅ Log temp_dir path để dễ tìm file debug
         ssid = session.dse_session_id
         
         try:
@@ -826,9 +878,30 @@ class TaxCrawlerService:
             # Chia khoảng thời gian
             date_ranges = self._get_date_ranges(start_date, end_date)
             
+            # ✅ TÍNH % THEO CÔNG THỨC MỚI: Tính số ngày của từng khoảng
+            total_days = 0
+            range_days = []  # Số ngày của từng khoảng
+            for date_range in date_ranges:
+                days = self._calculate_days_between(date_range[0], date_range[1])
+                range_days.append(days)
+                total_days += days
+            
+            # Tính % cho mỗi khoảng dựa trên số ngày (350 ngày = 100%, chia tỷ lệ)
+            range_percentages = []
+            for days in range_days:
+                if total_days > 0:
+                    percent = (days / total_days) * 100
+                else:
+                    percent = 100.0 if len(date_ranges) == 1 else 0.0
+                range_percentages.append(percent)
+            
             total_count = 0
             results = []
             accumulated_total_so_far = 0  # Tổng số file đã biết từ các khoảng trước
+            accumulated_percent_so_far = 0.0  # % tích lũy từ các khoảng trước
+            all_special_items = []  # ✅ PHƯƠNG ÁN LAI: Tổng hợp special items từ tất cả date ranges
+            thuyet_minh_total = 0  # Tổng số tờ thuyết minh (downloadBke) có thể tải
+            thuyet_minh_downloaded = 0  # Số tờ thuyết minh đã tải được
             
             yield {"type": "info", "message": f"Bắt đầu crawl {len(date_ranges)} khoảng thời gian..."}
             
@@ -836,11 +909,24 @@ class TaxCrawlerService:
             http_client = await self._get_http_client(session_id)
             
             for range_idx, date_range in enumerate(date_ranges):
+                # ✅ Check cancelled trước khi xử lý khoảng tiếp theo
+                if job_id and await self._check_cancelled(job_id):
+                    logger.info(f"Job {job_id} đã bị cancel, dừng crawl")
+                    yield {"type": "error", "error": "Job đã bị hủy", "error_code": "JOB_CANCELLED"}
+                    return
+                
+                # ✅ Giữ nguyên percent hiện tại khi chuyển khoảng (không reset về 0)
                 yield {
                     "type": "progress", 
                     "current": range_idx + 1, 
                     "total": len(date_ranges),
-                    "message": f"Đang xử lý khoảng {date_range[0]} - {date_range[1]}..."
+                    "message": f"Đang xử lý khoảng {date_range[0]} - {date_range[1]}...",
+                    "percent": int(round(accumulated_percent_so_far)),  # ✅ Giữ nguyên percent, không reset về 0, làm tròn về int
+                    "accumulated_percent": int(round(accumulated_percent_so_far)),
+                    "accumulated_total": accumulated_total_so_far,  # ✅ Tổng tích lũy từ các khoảng trước (chưa bao gồm khoảng hiện tại)
+                    "accumulated_downloaded": total_count,
+                    "thuyet_minh_downloaded": thuyet_minh_downloaded,
+                    "thuyet_minh_total": thuyet_minh_total
                 }
                 
                 try:
@@ -859,33 +945,122 @@ class TaxCrawlerService:
                     search_btn = frame.locator('input[value="Tra cứu"]')
                     await search_btn.click()
                     
+                    # Đợi kết quả load (table và pagination)
                     await asyncio.sleep(2)
+                    try:
+                        # Đợi table xuất hiện
+                        table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
+                        await table_body.wait_for(timeout=5000)
+                        logger.info(f"✅ Table found for date range {date_range[0]} - {date_range[1]}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Cannot find table for date range {date_range[0]} - {date_range[1]}: {e}")
+                        # ✅ Giữ nguyên percent hiện tại khi không có dữ liệu (không reset về 0%)
+                        yield {
+                            "type": "info", 
+                            "message": f"Không có dữ liệu trong khoảng {date_range[0]} - {date_range[1]}",
+                            "percent": int(round(accumulated_percent_so_far)),  # ✅ Giữ nguyên percent, không reset về 0, làm tròn về int
+                            "accumulated_percent": int(round(accumulated_percent_so_far)),
+                            "accumulated_total": accumulated_total_so_far,  # ✅ Tổng tích lũy từ các khoảng trước (không có dữ liệu nên không cộng thêm)
+                            "accumulated_downloaded": total_count,
+                            "thuyet_minh_downloaded": thuyet_minh_downloaded,
+                            "thuyet_minh_total": thuyet_minh_total
+                        }
+                        continue
                     
-                    # Bước 1: Collect tất cả items từ tất cả các trang trước
-                    download_queue = []  # Queue để batch download (collect từ tất cả trang)
-                    yield {"type": "info", "message": f"Đang thu thập danh sách tờ khai từ khoảng {date_range[0]} - {date_range[1]}..."}
+                    # Đợi thêm một chút để pagination div load
+                    await asyncio.sleep(1)
                     
-                    # Xử lý pagination - collect tất cả items
-                    check_pages = True
-                    page_number = 1
-                    while check_pages:
-                        # Tìm bảng kết quả - theo HTML thực tế
-                        # Bảng: #data_content_onday hoặc table.md_list2
-                        # Tbody: #allResultTableBody
+                    # ✅ PHƯƠNG ÁN 2: Download ngay (không collect trước)
+                    # Bước 1: Extract pagination info từ trang đầu tiên
+                    pagination_info = await self._extract_pagination_info(frame)
+                    if not pagination_info:
+                        # Thử check xem có rows không (có thể không có pagination div nhưng vẫn có data)
+                        rows = table_body.locator('tr')
+                        row_count = await rows.count()
+                        logger.info(f"📊 Row count: {row_count}")
+                        if row_count == 0:
+                            yield {"type": "info", "message": f"Không có dữ liệu trong khoảng {date_range[0]} - {date_range[1]}"}
+                            continue
+                        else:
+                            # Có rows nhưng không có pagination info → chỉ có 1 trang
+                            pagination_info = {
+                                "current_page": 1,
+                                "total_pages": 1,
+                                "total_records": row_count
+                            }
+                            logger.info(f"⚠️ Cannot extract pagination info, assuming 1 page with {row_count} records")
+                    
+                    total_pages = pagination_info["total_pages"]
+                    total_records_estimated = pagination_info["total_records"]  # Ước tính từ HTML
+                    
+                    # ✅ TÍNH % CHO KHOẢNG NÀY: % khoảng này chia cho số tờ khai (tính cả tờ đặc biệt, không tính tờ thuyết minh)
+                    range_percent = range_percentages[range_idx]  # % của khoảng này
+                    
+                    yield {
+                        "type": "info",
+                        "message": f"Tìm thấy {total_records_estimated} bản ghi trong {total_pages} trang. Bắt đầu tải..."
+                    }
+                    
+                    yield {
+                        "type": "download_start",
+                        "total_to_download": total_records_estimated,  # Ước tính
+                        "date_range": f"{date_range[0]} - {date_range[1]}",
+                        "range_index": range_idx + 1,
+                        "total_ranges": len(date_ranges),
+                        "accumulated_total": accumulated_total_so_far + total_records_estimated,
+                        "accumulated_downloaded": total_count,
+                        "range_percent": range_percent,  # % của khoảng này
+                        "accumulated_percent": accumulated_percent_so_far  # % tích lũy từ các khoảng trước
+                    }
+                    
+                    # Bước 2: Navigate và download từng trang
+                    downloaded_count = 0
+                    actual_downloaded = 0  # Đếm thực tế số file đã download (không tính tờ thuyết minh)
+                    actual_thuyet_minh_downloaded = 0  # Đếm số tờ thuyết minh đã tải được
+                    special_items = []  # ✅ PHƯƠNG ÁN LAI: Lưu metadata tối thiểu cho tờ khai đặc biệt
+                    range_thuyet_minh_total = 0  # Số tờ thuyết minh trong khoảng này (tính từ items có downloadBke)
+                    
+                    # ✅ Tính số tờ khai và % cho mỗi tờ khai (dùng ước lượng ban đầu, sẽ cập nhật sau)
+                    # Số tờ khai = total_records_estimated (chưa trừ tờ thuyết minh vì chưa biết)
+                    tokhai_count = total_records_estimated  # Sẽ cập nhật sau khi parse rows
+                    if tokhai_count > 0:
+                        percent_per_tokhai = range_percent / tokhai_count
+                    else:
+                        percent_per_tokhai = 0.0
+                    
+                    for page_num in range(1, total_pages + 1):
+                        # ✅ Check cancelled trước khi xử lý trang tiếp theo
+                        if job_id and await self._check_cancelled(job_id):
+                            logger.info(f"Job {job_id} đã bị cancel, dừng crawl")
+                            yield {"type": "error", "error": "Job đã bị hủy", "error_code": "JOB_CANCELLED"}
+                            return
+                        
+                        # Navigate đến trang
+                        if page_num > 1:
+                            success = await self._navigate_to_page(frame, page_num)
+                            if not success:
+                                logger.warning(f"⚠️ Cannot navigate to page {page_num}, skipping")
+                                continue
+                        
+                        # Đợi table load
                         try:
                             table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
                             await table_body.wait_for(timeout=5000)
                         except:
-                            if page_number == 1:
-                            yield {"type": "info", "message": f"Không có dữ liệu trong khoảng {date_range[0]} - {date_range[1]}"}
-                            break
+                            logger.warning(f"⚠️ Cannot find table on page {page_num}")
+                            continue
+                        
+                        # Extract params cho trang này
+                        page_params = await self._extract_download_params(frame)
+                        if not page_params:
+                            logger.warning(f"⚠️ Cannot extract params for page {page_num}")
+                            continue
                         
                         rows = table_body.locator('tr')
                         row_count = await rows.count()
                         
-                        yield {"type": "progress", "current": len(download_queue), "message": f"Đang thu thập trang {page_number} ({row_count} tờ khai)..."}
-                        
-                        page_valid_count = 0  # Đếm số items hợp lệ trong trang này
+                        # Parse rows và download ngay (không collect)
+                        page_items_to_download = []  # Chỉ lưu items có link để download batch
                         
                         for i in range(row_count):
                             try:
@@ -903,8 +1078,8 @@ class TaxCrawlerService:
                                 # Cột 2: Tờ khai/Phụ lục
                                 name_tk = await cols.nth(2).text_content() if col_count > 2 else ""
                                 
-                                # Check xem có link download trong cột 2 (có thể là downloadTkhai hoặc downloadBke)
-                                download_type = None  # "downloadTkhai", "downloadBke", hoặc None
+                                # Check xem có link download không
+                                download_type = None
                                 has_link = False
                                 extracted_id = None
                                 
@@ -918,78 +1093,120 @@ class TaxCrawlerService:
                                         onclick = await first_link.get_attribute('onclick')
                                         title = await first_link.get_attribute('title')
                                         
-                                        # Check downloadBke (file thuyết minh)
                                         if onclick and 'downloadBke' in onclick:
                                             download_type = "downloadBke"
                                             has_link = True
-                                            # Extract ID từ downloadBke('ID')
+                                            range_thuyet_minh_total += 1  # ✅ Đếm tờ thuyết minh
                                             match = re.search(r"downloadBke\(['\"]?(\d+)['\"]?\)", onclick)
                                             if match:
                                                 extracted_id = match.group(1)
-                                                # Nếu cột 1 rỗng, dùng ID từ onclick
                                                 if not id_tk or len(id_tk) < 4:
                                                     id_tk = extracted_id
-                                        # Check downloadTkhai (tờ khai thông thường)
                                         elif onclick and 'downloadTkhai' in onclick:
                                             download_type = "downloadTkhai"
                                             has_link = True
-                                            # Extract ID từ downloadTkhai('ID')
                                             match = re.search(r"downloadTkhai\(['\"]?(\d+)['\"]?\)", onclick)
                                             if match:
                                                 extracted_id = match.group(1)
-                                        # Fallback: check title
                                         elif title and 'Tải tệp' in title:
                                             has_link = True
-                                            download_type = "downloadTkhai"  # Mặc định
-                                        
-                                except Exception as e:
+                                            download_type = "downloadTkhai"
+                                except:
                                     has_link = False
                                 
-                                # Nếu không có ID hợp lệ và không có link download, skip
-                                if (not id_tk or len(id_tk) < 4) and not has_link:
-                                    continue
+                                # Nếu không có ID hợp lệ, thử dùng extracted_id
+                                if not id_tk or len(id_tk) < 4:
+                                    if extracted_id:
+                                        id_tk = extracted_id
+                                    else:
+                                        # Không có ID hợp lệ → skip
+                                        continue
                                 
-                                # Chỉ đếm khi item hợp lệ
-                                page_valid_count += 1
-                                
-                                # Extract thông tin theo đúng cấu trúc HTML
-                                # Cột 3: Kỳ tính thuế  
-                                ky_tinh_thue = await cols.nth(3).text_content() if col_count > 3 else ""
-                                # Cột 4: Loại tờ khai (Chính thức/Bổ sung)
-                                loai_tk = await cols.nth(4).text_content() if col_count > 4 else ""
-                                # Cột 5: Lần nộp
-                                lan_nop = await cols.nth(5).text_content() if col_count > 5 else ""
-                                # Cột 6: Lần bổ sung
-                                lan_bs = await cols.nth(6).text_content() if col_count > 6 else ""
-                                # Cột 7: Ngày nộp
-                                ngay_nop = await cols.nth(7).text_content() if col_count > 7 else ""
-                                # Cột 9: Nơi nộp
-                                noi_nop = await cols.nth(9).text_content() if col_count > 9 else ""
-                                # Cột 10: Trạng thái
-                                trang_thai = await cols.nth(10).text_content() if col_count > 10 else ""
-                                
-                                # Chuẩn hóa tên tờ khai
+                                # Extract thông tin cơ bản (cần cho cả items có link và không có link)
                                 name_tk_normalized = self._normalize_tokhai_name(name_tk.strip() if name_tk else "")
                                 
-                                # Xác định trạng thái
-                                status = "unknown"
-                                status_text = ""
-                                trang_thai_lower = trang_thai.lower() if trang_thai else ""
-                                if "không chấp nhận" in trang_thai_lower:
-                                    status = "rejected"
-                                    status_text = "[Khong chap nhan]"
-                                elif "chấp nhận" in trang_thai_lower:
-                                    status = "accepted"
-                                    status_text = "[Chap nhan]"
-                                
-                                # Tạo tên file giống code cũ
-                                # Format: {name_tk} -{ky} -L{lan} -{loai} -({id}) -[{ngay}] [{status}]
-                                ngay_nop_clean = ngay_nop.strip().replace("/", "-").replace(":", "-") if ngay_nop else ""
-                                file_name = f"{name_tk_normalized} -{ky_tinh_thue.strip()} -L{lan_nop.strip()} -{loai_tk.strip()} -({id_tk}) -[{ngay_nop_clean}] {status_text}"
-                                file_name = self._remove_accents(file_name)
-                                file_name = file_name.replace("/", "_").replace(":", "_").replace("\\", "_")
-                                
-                                download_info = {
+                                # ✅ PHƯƠNG ÁN LAI: Xử lý khác nhau cho items có link và không có link
+                                if has_link:
+                                    # Items có link → Extract đầy đủ thông tin và download ngay
+                                    ky_tinh_thue = await cols.nth(3).text_content() if col_count > 3 else ""
+                                    loai_tk = await cols.nth(4).text_content() if col_count > 4 else ""
+                                    lan_nop = await cols.nth(5).text_content() if col_count > 5 else ""
+                                    lan_bs = await cols.nth(6).text_content() if col_count > 6 else ""
+                                    ngay_nop = await cols.nth(7).text_content() if col_count > 7 else ""
+                                    noi_nop = await cols.nth(9).text_content() if col_count > 9 else ""
+                                    trang_thai = await cols.nth(10).text_content() if col_count > 10 else ""
+                                    
+                                    # ✅ FIX: Parse trạng thái theo format cũ
+                                    # Format cũ: {mã_giao_dịch} - {trạng_thái} - {ngày}.xml
+                                    # VD: 11320250346736414 - Tiếp nhận - 2025-03-22.xml
+                                    
+                                    status = "unknown"
+                                    status_text = ""
+                                    trang_thai_lower = trang_thai.lower() if trang_thai else ""
+                                    
+                                    # Parse trạng thái từ cột "Trạng thái" (giống logic code cũ)
+                                    if "tiếp nhận" in trang_thai_lower or "tiep nhan" in trang_thai_lower:
+                                        status = "received"
+                                        status_text = "Tiếp nhận"
+                                    elif "xác nhận" in trang_thai_lower or "xac nhan" in trang_thai_lower:
+                                        status = "confirmed"
+                                        status_text = "Xác nhận"
+                                    elif "không chấp nhận" in trang_thai_lower or "khong chap nhan" in trang_thai_lower:
+                                        status = "rejected"
+                                        status_text = "Không chấp nhận"
+                                    elif "chấp nhận" in trang_thai_lower or "chap nhan" in trang_thai_lower:
+                                        status = "accepted"
+                                        status_text = "Chấp nhận"
+                                    else:
+                                        # Nếu không parse được, dùng text gốc (rút gọn)
+                                        status_text = trang_thai.strip()[:20] if trang_thai else "Unknown"
+                                    
+                                    # Remove accents từ status_text
+                                    status_text_clean = self._remove_accents(status_text)
+                                    
+                                    # Parse ngày nộp: "22/03/2025 19:46:29" → "2025-03-22"
+                                    ngay_clean = ""
+                                    if ngay_nop:
+                                        # Lấy phần ngày, bỏ phần giờ
+                                        ngay_parts = ngay_nop.strip().split(" ")
+                                        if ngay_parts:
+                                            ngay_only = ngay_parts[0]  # "22/03/2025"
+                                            # Đổi format: dd/mm/yyyy → yyyy-mm-dd
+                                            date_parts = ngay_only.split("/")
+                                            if len(date_parts) == 3:
+                                                ngay_clean = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
+                                            else:
+                                                ngay_clean = ngay_only.replace("/", "-")
+                                    
+                                    # Build file_name theo format cũ: {mã} - {trạng_thái} - {ngày}
+                                    # VD: 11320250346736414 - Tiếp nhận - 2025-03-22.xml
+                                    if ngay_clean:
+                                        file_name = f"{id_tk} - {status_text_clean} - {ngay_clean}"
+                                    else:
+                                        file_name = f"{id_tk} - {status_text_clean}"
+                                    
+                                    # ✅ FIX: Nếu tên quá dài (>150 chars), rút gọn phần giữa
+                                    max_filename_length = 150
+                                    if len(file_name) > max_filename_length:
+                                        # Rút gọn status_text (Tiếp nhận → TN, Chấp nhận → CN, etc.)
+                                        status_short = {
+                                            "Tiep nhan": "TN",
+                                            "Chap nhan": "CN",
+                                            "Khong chap nhan": "KCN",
+                                            "Xac nhan": "XN"
+                                        }.get(status_text_clean, status_text_clean[:3])
+                                        
+                                        if ngay_clean:
+                                            file_name = f"{id_tk} - {status_short} - {ngay_clean}"
+                                        else:
+                                            file_name = f"{id_tk} - {status_short}"
+                                        
+                                        # Nếu vẫn quá dài, cắt bớt
+                                        if len(file_name) > max_filename_length:
+                                            file_name = file_name[:max_filename_length]
+                                    
+                                    # Lưu item để download batch
+                                    item = {
                                     "id": id_tk,
                                     "name": name_tk_normalized,
                                     "ky_tinh_thue": ky_tinh_thue.strip() if ky_tinh_thue else "",
@@ -1000,114 +1217,184 @@ class TaxCrawlerService:
                                     "noi_nop": noi_nop.strip() if noi_nop else "",
                                     "trang_thai": status,
                                     "file_name": file_name,
-                                    "has_link": has_link,
-                                    "download_type": download_type  # "downloadTkhai", "downloadBke", hoặc None
-                                }
-                                download_queue.append(download_info)
+                                        "has_link": True,
+                                        "download_type": download_type,
+                                        "page_number": page_num
+                                    }
+                                    page_items_to_download.append(item)
+                                else:
+                                    # ✅ Items không có link → Collect metadata TỐI THIỂU để sau này có thể tải
+                                    special_item = {
+                                        "id": id_tk,
+                                        "name": name_tk_normalized,
+                                        "page_number": page_num,
+                                        "has_link": False,
+                                        "date_range": f"{date_range[0]} - {date_range[1]}"
+                                    }
+                                    special_items.append(special_item)
+                                    logger.info(f"📝 Collected special item (no link): {id_tk} - {name_tk_normalized} (page {page_num})")
                                 
                             except Exception as e:
                                 logger.error(f"Error processing row: {e}")
                                 continue
                         
-                        # Check pagination - next page
-                        try:
-                            next_btn = frame.locator('img[src="/etaxnnt/static/images/pagination_right.gif"]')
-                            if await next_btn.count() > 0:
-                                await next_btn.click()
-                                await asyncio.sleep(1)
-                                page_number += 1
-                            else:
-                                check_pages = False
-                        except:
-                            check_pages = False
-                    
-                    # Bước 2: Sau khi collect xong tất cả, bắt đầu download
-                        if download_queue:
-                        total_files_in_queue = len(download_queue)
-                        yield {"type": "info", "message": f"Đã thu thập {total_files_in_queue} tờ khai. Bắt đầu download..."}
-                        
-                        # Cập nhật tổng tích lũy: cộng thêm số file của khoảng này
-                        accumulated_total_so_far += total_files_in_queue
-                        
-                        yield {
-                            "type": "download_start",
-                            "total_to_download": total_files_in_queue,
-                            "date_range": f"{date_range[0]} - {date_range[1]}",
-                            "range_index": range_idx + 1,
-                            "total_ranges": len(date_ranges),
-                            "accumulated_total": accumulated_total_so_far,  # Tổng tích lũy từ tất cả các khoảng đã biết
-                            "accumulated_downloaded": total_count  # Số đã download từ các lần trước
-                        }
-                        
-                        # Download với progress tracking
-                        downloaded_count = 0
-                        successful_downloads = []
-                        
-                        # Download tất cả song song (max 5 cùng lúc) với progress tracking
-                        semaphore = asyncio.Semaphore(5)
-                        async def download_one(item):
-                            async with semaphore:
-                                return await self._batch_download_one(session, item, temp_dir, ssid, frame, session_id)
-                        
-                        # Download và track progress
-                        download_tasks = [download_one(item) for item in download_queue]
-                        
-                        # Keep-alive task để gửi empty events mỗi 30 giây khi đang download
-                        # Tránh connection bị đóng do idle timeout
-                        keep_alive_active = True
-                        async def keep_alive_loop():
-                            while keep_alive_active:
-                                await asyncio.sleep(30)  # Gửi keep-alive mỗi 30 giây
-                                if keep_alive_active:
-                                    yield {"type": "keep_alive", "message": "Đang download..."}
-                        
-                        # Tạo keep-alive task
-                        keep_alive_task = None
-                        try:
-                            # Process downloads as they complete
-                            for coro in asyncio.as_completed(download_tasks):
-                                result = await coro
-                                if result:
-                                    downloaded_count += 1
-                                    successful_downloads.append(result)
-                                    # Yield progress
-                                    yield {
-                                        "type": "download_progress",
-                                        "downloaded": downloaded_count,
-                                        "total": total_files_in_queue,
-                                        "percent": int((downloaded_count / total_files_in_queue) * 100) if total_files_in_queue > 0 else 0,
-                                        "date_range": f"{date_range[0]} - {date_range[1]}",
-                                        "range_index": range_idx + 1,
-                                        "total_ranges": len(date_ranges),
-                                        "accumulated_downloaded": total_count + downloaded_count,
-                                        "accumulated_total": accumulated_total_so_far
-                                    }
-                        finally:
-                            # Dừng keep-alive khi download xong
-                            keep_alive_active = False
-                        
-                        # Yield items
-                            for item in successful_downloads:
-                                result = {
-                                    "id": item["id"],
-                                    "name": item["name"],
-                                    "ky_tinh_thue": item["ky_tinh_thue"],
-                                    "loai": item["loai"],
-                                    "lan_nop": item["lan_nop"],
-                                    "lan_bo_sung": item["lan_bo_sung"],
-                                    "ngay_nop": item["ngay_nop"],
-                                    "noi_nop": item["noi_nop"],
-                                    "trang_thai": item["trang_thai"],
-                                    "file_name": item["file_name"] + ".xml"
-                                }
-                                results.append(result)
-                                yield {"type": "item", "data": result}
+                        # Download batch items của trang này
+                        if page_items_to_download:
+                            # Tạo page_params_map cho trang này
+                            page_params_map = {page_num: page_params}
                             
-                            # Chỉ đếm những file download thành công
-                            total_count += len(successful_downloads)
-                        else:
-                            # Nếu không có gì để download, không đếm
-                            pass
+                            # ✅ Tính số tờ khai (tính cả tờ đặc biệt, không tính tờ thuyết minh)
+                            # total_records_estimated bao gồm cả tờ thuyết minh và tờ đặc biệt
+                            # Số tờ khai thực tế = total_records_estimated - range_thuyet_minh_total (tờ thuyết minh)
+                            tokhai_count = total_records_estimated - range_thuyet_minh_total
+                            
+                            # ✅ Tính %: % khoảng này chia cho số tờ khai
+                            # Mỗi tờ khai = range_percent / tokhai_count (nếu tokhai_count > 0)
+                            if tokhai_count > 0:
+                                percent_per_tokhai = range_percent / tokhai_count
+                            else:
+                                percent_per_tokhai = 0.0
+                            
+                            # ✅ Yield event "Đang xử lý trang..." SAU khi đã biết tokhai_count chính xác
+                            current_percent_for_page = accumulated_percent_so_far + (actual_downloaded * percent_per_tokhai)
+                            # ✅ Tính accumulated_total: tổng tích lũy từ tất cả các khoảng đã xử lý
+                            accumulated_total_current = accumulated_total_so_far + total_records_estimated
+                            yield {
+                                "type": "progress",
+                                "current": actual_downloaded,
+                                "message": f"Đang xử lý trang {page_num}/{total_pages} ({len(page_items_to_download)} tờ khai)...",
+                                "percent": int(round(current_percent_for_page)),  # ✅ Giữ nguyên percent, không reset về 0, làm tròn về int
+                                "accumulated_percent": int(round(current_percent_for_page)),
+                                "accumulated_total": accumulated_total_current,  # ✅ Tổng tích lũy từ tất cả các khoảng
+                                "accumulated_downloaded": total_count + actual_downloaded,
+                                "thuyet_minh_downloaded": thuyet_minh_downloaded + actual_thuyet_minh_downloaded,
+                                "thuyet_minh_total": thuyet_minh_total + range_thuyet_minh_total
+                            }
+                            
+                            # ✅ Download từng file và yield progress sau mỗi file
+                            successful_downloads = []
+                            base_params = page_params  # Dùng params của trang hiện tại
+                            
+                            # Download từng file trong page này
+                            for idx, item in enumerate(page_items_to_download):
+                                file_num = idx + 1
+                                
+                                # Refresh params trước mỗi file để đảm bảo state đúng
+                                try:
+                                    fresh_params = await self._extract_download_params(frame)
+                                    if fresh_params:
+                                        base_params = fresh_params
+                                except:
+                                    pass
+                                
+                                # Download file
+                                try:
+                                    result = await self._download_one_via_url(
+                                        session_id,
+                                        item["id"],
+                                        item,
+                                        base_params,
+                                        temp_dir,
+                                        frame=frame
+                                    )
+                                    
+                                    if result and not isinstance(result, Exception):
+                                        successful_downloads.append(result)
+                                        
+                                        # ✅ Track tờ thuyết minh và tờ khai riêng biệt
+                                        if result.get("download_type") == "downloadBke":
+                                            actual_thuyet_minh_downloaded += 1
+                                        else:
+                                            actual_downloaded += 1  # Chỉ tính tờ khai, không tính tờ thuyết minh
+                                        downloaded_count += 1
+                                        
+                                        # ✅ Tính % hiện tại: % tích lũy từ các khoảng trước + % của các tờ khai đã tải trong khoảng này
+                                        current_percent = accumulated_percent_so_far + (actual_downloaded * percent_per_tokhai)
+                                        
+                                        # ✅ Tính accumulated_total: tổng tích lũy từ tất cả các khoảng đã xử lý
+                                        # accumulated_total_so_far = tổng của các khoảng trước
+                                        # total_records_estimated = tổng của khoảng hiện tại
+                                        accumulated_total_current = accumulated_total_so_far + total_records_estimated
+                                        
+                                        # ✅ Yield progress sau mỗi file download xong
+                                        yield {
+                                            "type": "download_progress",
+                                            "downloaded": actual_downloaded,
+                                            "total": total_records_estimated,  # Ước tính của khoảng hiện tại
+                                            "percent": int(round(current_percent)),  # ✅ % tích lũy không thụt lùi, làm tròn về int
+                                            "date_range": f"{date_range[0]} - {date_range[1]}",
+                                            "range_index": range_idx + 1,
+                                            "total_ranges": len(date_ranges),
+                                            "accumulated_downloaded": total_count + actual_downloaded,
+                                            "accumulated_total": accumulated_total_current,  # ✅ Tổng tích lũy từ tất cả các khoảng
+                                            "accumulated_percent": int(round(current_percent)),  # ✅ % tích lũy, làm tròn về int
+                                            "thuyet_minh_downloaded": thuyet_minh_downloaded + actual_thuyet_minh_downloaded,  # ✅ Số tờ thuyết minh đã tải
+                                            "thuyet_minh_total": thuyet_minh_total + range_thuyet_minh_total  # ✅ Tổng số tờ thuyết minh
+                                        }
+                                        
+                                        # Yield item
+                                        result_data = {
+                                            "id": result["id"],
+                                            "name": result["name"],
+                                            "ky_tinh_thue": result["ky_tinh_thue"],
+                                            "loai": result["loai"],
+                                            "lan_nop": result["lan_nop"],
+                                            "lan_bo_sung": result["lan_bo_sung"],
+                                            "ngay_nop": result["ngay_nop"],
+                                            "noi_nop": result["noi_nop"],
+                                            "trang_thai": result["trang_thai"],
+                                            "file_name": result["file_name"] + ".xml"
+                                        }
+                                        results.append(result_data)
+                                        yield {"type": "item", "data": result_data}
+                                    
+                                    await asyncio.sleep(0.1)  # Delay nhỏ giữa mỗi file
+                                except Exception as e:
+                                    logger.error(f"❌ Error downloading {item.get('id', 'unknown')}: {e}")
+                    
+                    # ✅ Cập nhật tổng tích lũy: cộng tổng ước tính của khoảng này (bao gồm cả tờ khai đặc biệt)
+                    accumulated_total_so_far += total_records_estimated  # ✅ Tổng ước tính, không phải số đã tải
+                    total_count += actual_downloaded  # ✅ Số đã tải thành công
+                    
+                    # ✅ Cập nhật % tích lũy: % khoảng này đã hoàn thành
+                    accumulated_percent_so_far += range_percent
+                    
+                    # ✅ Cập nhật tờ thuyết minh
+                    thuyet_minh_total += range_thuyet_minh_total
+                    thuyet_minh_downloaded += actual_thuyet_minh_downloaded
+                    
+                    # ✅ PHƯƠNG ÁN LAI: Lưu special items vào tổng hợp
+                    if special_items:
+                        all_special_items.extend(special_items)
+                        yield {
+                            "type": "special_items",
+                            "count": len(special_items),
+                            "items": special_items,
+                            "date_range": f"{date_range[0]} - {date_range[1]}",
+                            "message": f"Có {len(special_items)} tờ khai đặc biệt trong khoảng {date_range[0]} - {date_range[1]} (chưa có cách tải, đã lưu metadata để sau này)",
+                            # ✅ Giữ nguyên percent khi yield special_items
+                            "percent": int(round(accumulated_percent_so_far)),
+                            "accumulated_percent": int(round(accumulated_percent_so_far)),
+                            "accumulated_total": accumulated_total_so_far,  # ✅ Đã được cập nhật ở trên
+                            "accumulated_downloaded": total_count,  # ✅ Đã được cập nhật ở trên
+                            "thuyet_minh_downloaded": thuyet_minh_downloaded,
+                            "thuyet_minh_total": thuyet_minh_total
+                        }
+                        logger.info(f"📋 Found {len(special_items)} special items (no download link) in date range {date_range[0]} - {date_range[1]}")
+                    
+                    # ✅ Yield info event với accumulated_percent để không reset về 0%
+                    # Lưu ý: accumulated_total_so_far và total_count đã được cập nhật ở trên
+                    yield {
+                        "type": "info",
+                        "message": f"Đã tải {actual_downloaded} file từ {total_pages} trang (ước tính {total_records_estimated} bản ghi). Có {len(special_items)} tờ khai đặc biệt chưa tải.",
+                        # ✅ Giữ nguyên percent khi yield info
+                        "percent": int(round(accumulated_percent_so_far)),
+                        "accumulated_percent": int(round(accumulated_percent_so_far)),
+                        "accumulated_total": accumulated_total_so_far,  # ✅ Đã được cập nhật ở trên (line 1316)
+                        "accumulated_downloaded": total_count,  # ✅ Đã được cập nhật ở trên (line 1317)
+                        "thuyet_minh_downloaded": thuyet_minh_downloaded,  # ✅ Đã được cập nhật ở trên (line 1324)
+                        "thuyet_minh_total": thuyet_minh_total  # ✅ Đã được cập nhật ở trên (line 1323)
+                    }
                 
                 except Exception as e:
                     logger.error(f"Error processing date range {date_range}: {e}")
@@ -1162,33 +1449,60 @@ class TaxCrawlerService:
                     logger.warning(f"⚠️ Không thể lưu download_id vào Redis: {redis_err}")
             else:
                 # Không có files
-            if is_all_types:
-                zip_filename = f"tokhai_TAT_CA_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
-                tokhai_type_label = "Tất cả"
-            else:
-                zip_filename = f"tokhai_{tokhai_type}_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
-                tokhai_type_label = tokhai_type
+                pass
             
-            # Đếm lại số file thực tế đã download
+            # Tạo zip_filename nếu chưa có (cho trường hợp không có files)
+            if not download_id:
+                if is_all_types:
+                    zip_filename = f"tokhai_TAT_CA_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
+                    tokhai_type_label = "Tất cả"
+                else:
+                    zip_filename = f"tokhai_{tokhai_type}_{start_date.replace('/', '')}_{end_date.replace('/', '')}.zip"
+                    tokhai_type_label = tokhai_type
+            
+            # Đếm lại số file thực tế đã download (tờ khai + tờ thuyết minh)
             actual_files_count = len(files_info)
             # Đếm số results thực tế
             actual_results_count = len(results)
             
-            # Total = số file thực tế đã download (vì user cần số file trong ZIP)
+            # ✅ Tính số tờ khai đã tải (không bao gồm tờ thuyết minh)
+            tokhai_downloaded = total_count  # Số tờ khai đã tải (không tính tờ thuyết minh)
+            # ✅ Tổng số file đã tải = tờ khai + tờ thuyết minh
+            total_files_downloaded = tokhai_downloaded + thuyet_minh_downloaded
+            
+            # ✅ LOG để debug
+            logger.info(f"📊 Complete event - tokhai_downloaded: {tokhai_downloaded}, thuyet_minh_downloaded: {thuyet_minh_downloaded}, total_files_downloaded: {total_files_downloaded}, accumulated_total_so_far: {accumulated_total_so_far}")
+            
+            # ✅ Message hiển thị khi hoàn thành
+            completion_message = f"Hoàn thành! Đã tải {tokhai_downloaded}/{accumulated_total_so_far} tờ khai"
+            if thuyet_minh_total > 0:
+                completion_message += f" - {thuyet_minh_downloaded}/{thuyet_minh_total} tờ thuyết minh"
+            if len(all_special_items) > 0:
+                completion_message += f". Có {len(all_special_items)} tờ khai đặc biệt không tải được"
+            
+            # Total = số file thực tế đã download (tờ khai + tờ thuyết minh) - đây là số hiển thị trên button
             # Nếu muốn biết số items đã tìm thấy, dùng actual_results_count
             # Complete event KHÔNG gửi zip_base64 và results (quá lớn), chỉ gửi metadata
             yield {
                 "type": "complete",
-                "total": actual_files_count,  # Số file thực tế trong ZIP (chính xác nhất)
+                "total": total_files_downloaded,  # ✅ Số file đã tải (tờ khai + tờ thuyết minh) - để hiển thị trên button
+                "tokhai_downloaded": tokhai_downloaded,  # Số tờ khai đã tải
+                "tokhai_total": accumulated_total_so_far,  # Tổng số tờ khai tìm thấy
+                "thuyet_minh_downloaded": thuyet_minh_downloaded,  # Số tờ thuyết minh đã tải
+                "thuyet_minh_total": thuyet_minh_total,  # Tổng số tờ thuyết minh
+                "special_items_count": len(all_special_items),  # Số tờ khai đặc biệt không tải được
                 "results_count": actual_results_count,  # Số items đã tìm thấy (có thể > files nếu download thất bại)
                 "total_rows_processed": total_count,  # Số rows đã xử lý (để debug)
-                "files_count": actual_files_count,
+                "files_count": actual_files_count,  # Số file trong ZIP (để kiểm tra)
                 "total_size": total_size,
                 "download_id": download_id,  # ID để download zip từ API server
                 "zip_filename": zip_filename,
                 "tokhai_type": tokhai_type_label,
                 "is_all_types": is_all_types,
-                "has_zip": download_id is not None
+                "has_zip": download_id is not None,
+                "message": completion_message,  # ✅ Message hiển thị khi hoàn thành
+                # ✅ PHƯƠNG ÁN LAI: Thêm thông tin về special items
+                "special_items": all_special_items if len(all_special_items) > 0 else None,  # Chỉ gửi nếu có
                 # NOTE: results và files_info không gửi trong complete event để giảm kích thước
                 # Worker sẽ lấy từ zip file hoặc từ zip_data event
             }
@@ -1227,6 +1541,27 @@ class TaxCrawlerService:
                 yield {"type": "error", "error": f"Lỗi khi tra cứu tờ khai: {error_msg}", "error_code": "CRAWL_ERROR"}
         
         finally:
+            # ✅ FIX: Kiểm tra xem có file debug không trước khi xóa temp_dir
+            debug_files = []
+            try:
+                if os.path.exists(temp_dir):
+                    for file in os.listdir(temp_dir):
+                        if file.startswith('DEBUG_'):
+                            debug_files.append(os.path.join(temp_dir, file))
+                
+                if debug_files:
+                    logger.warning(f"⚠️ Found {len(debug_files)} debug files in {temp_dir}:")
+                    for debug_file in debug_files:
+                        file_size = os.path.getsize(debug_file) if os.path.exists(debug_file) else 0
+                        logger.warning(f"  - {os.path.basename(debug_file)} ({file_size} bytes)")
+                    logger.warning(f"⚠️ Debug files will be kept for inspection. Temp dir: {temp_dir}")
+                    # Không xóa temp_dir nếu có file debug
+                else:
+                    # Xóa temp_dir nếu không có file debug
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Error checking debug files: {e}")
+                # Vẫn xóa temp_dir nếu có lỗi
             shutil.rmtree(temp_dir, ignore_errors=True)
     
     def _remove_accents(self, text: str) -> str:
@@ -1237,262 +1572,1066 @@ class TaxCrawlerService:
         except:
             return text
     
+    async def _extract_pagination_info(self, frame) -> Optional[Dict[str, int]]:
+        """
+        Extract pagination info từ div #currAcc
+        Returns: {"current_page": 1, "total_pages": 2, "total_records": 13} hoặc None
+        """
+        try:
+            pagination_div = frame.locator('#currAcc').first
+            if await pagination_div.count() == 0:
+                logger.warning("⚠️ Cannot find #currAcc div")
+                return None
+            
+            # Thử lấy innerHTML trước (có tags)
+            html_content = await pagination_div.inner_html()
+            if html_content:
+                import re
+                # Extract: "Trang 1/<b>2</b>. Có <b>13</b> bản ghi."
+                # Pattern với HTML tags
+                page_match = re.search(r'Trang\s+(\d+)\s*/\s*<b>(\d+)</b>', html_content)
+                records_match = re.search(r'Có\s+<b>(\d+)</b>\s+bản\s+ghi', html_content)
+                
+                if page_match:
+                    current_page = int(page_match.group(1))
+                    total_pages = int(page_match.group(2))
+                    total_records = int(records_match.group(1)) if records_match else 0
+                    return {
+                        "current_page": current_page,
+                        "total_pages": total_pages,
+                        "total_records": total_records
+                    }
+            
+            # Fallback: Lấy text_content (không có tags)
+            text = await pagination_div.text_content()
+            if not text:
+                logger.warning("⚠️ Pagination div has no content")
+                return None
+            
+            import re
+            # Extract từ text thuần: "Trang 1/2. Có 13 bản ghi."
+            # Pattern không có HTML tags
+            page_match = re.search(r'Trang\s+(\d+)\s*/\s*(\d+)', text)
+            records_match = re.search(r'Có\s+(\d+)\s+bản\s+ghi', text)
+            
+            if page_match:
+                current_page = int(page_match.group(1))
+                total_pages = int(page_match.group(2))
+                total_records = int(records_match.group(1)) if records_match else 0
+                return {
+                    "current_page": current_page,
+                    "total_pages": total_pages,
+                    "total_records": total_records
+                }
+            
+            logger.warning(f"⚠️ Cannot parse pagination info from text: {text[:100]}")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error extracting pagination info: {e}")
+            return None
+    
+    async def _navigate_to_page(self, frame, target_page: int) -> bool:
+        """
+        Navigate đến trang cụ thể bằng link có sẵn trong HTML
+        Returns: True nếu navigate thành công, False nếu không tìm thấy link
+        """
+        try:
+            # Đợi pagination div xuất hiện
+            try:
+                pagination_div = frame.locator('#currAcc').first
+                await pagination_div.wait_for(timeout=3000)
+            except:
+                logger.warning(f"⚠️ Cannot find #currAcc div, trying to navigate anyway")
+                # Vẫn thử navigate bằng cách tìm link trực tiếp trong frame
+                pass
+            
+            # Tìm link có href chứa &pn=target_page
+            # Thử nhiều cách:
+            # 1. Tìm trong #currAcc
+            # 2. Tìm trực tiếp trong frame
+            link = None
+            
+            # Cách 1: Tìm trong #currAcc
+            pagination_div = frame.locator('#currAcc').first
+            if await pagination_div.count() > 0:
+                link = pagination_div.locator(f'a[href*="&pn={target_page}"]').first
+                if await link.count() == 0:
+                    # Thử tìm link có text = target_page
+                    link = pagination_div.locator(f'a:has-text("{target_page}")').first
+            
+            # Cách 2: Tìm trực tiếp trong frame (fallback)
+            if not link or await link.count() == 0:
+                link = frame.locator(f'a[href*="&pn={target_page}"]').first
+                if await link.count() == 0:
+                    link = frame.locator(f'a:has-text("{target_page}")').first
+            
+            if not link or await link.count() == 0:
+                logger.warning(f"⚠️ Cannot find link to page {target_page}")
+                return False
+            
+            # Click link
+            await link.click()
+            
+            # Đợi table load (đảm bảo đã navigate xong)
+            try:
+                table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
+                await table_body.wait_for(timeout=5000)
+                await asyncio.sleep(1)  # Đợi thêm một chút để pagination div update
+            except:
+                logger.warning(f"⚠️ Table not found after navigating to page {target_page}")
+                # Vẫn return True vì có thể đã navigate nhưng table chưa load
+            
+            # Verify đã navigate đúng trang (optional, không bắt buộc)
+            pagination_info = await self._extract_pagination_info(frame)
+            if pagination_info and pagination_info["current_page"] == target_page:
+                logger.info(f"✅ Navigated to page {target_page}")
+            else:
+                logger.info(f"✅ Navigated to page {target_page} (verification: current_page={pagination_info.get('current_page') if pagination_info else 'unknown'})")
+            
+            return True
+                
+        except Exception as e:
+            logger.error(f"Error navigating to page {target_page}: {e}")
+            return False
+    
+    async def _take_screenshot_on_download_error(
+        self,
+        session_id: str,
+        ma_tkhai: str,
+        error_reason: str,
+        frame=None
+    ) -> Optional[str]:
+        """
+        Chụp màn hình khi download fail để debug
+        
+        Args:
+            session_id: Session ID để lấy page
+            ma_tkhai: Mã giao dịch của tờ khai
+            error_reason: Lý do lỗi (để đặt tên file)
+            frame: Frame hiện tại (nếu có)
+        
+        Returns:
+            Path đến file screenshot hoặc None nếu fail
+        """
+        try:
+            # Lấy session để có page
+            session = self.session_manager.get_session(session_id)
+            if not session or not session.page:
+                logger.warning(f"[{ma_tkhai}] Cannot take screenshot: No session or page")
+                return None
+            
+            page = session.page
+            
+            # Tạo thư mục screenshots trong project
+            # Lấy đường dẫn project (tool-go-soft)
+            # File này ở: tool-gotax/tool-go-soft/services/tax_crawler.py
+            # Muốn tới: tool-gotax/tool-go-soft/screenshots/
+            current_dir = os.path.dirname(os.path.abspath(__file__))  # .../services/
+            services_dir = os.path.dirname(current_dir)  # .../tool-go-soft/
+            screenshots_dir = os.path.join(services_dir, "screenshots")  # .../tool-go-soft/screenshots/
+            os.makedirs(screenshots_dir, exist_ok=True)
+            
+            # Tạo tên file với timestamp và ma_tkhai
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_error_reason = error_reason.replace(" ", "_").replace("/", "_").replace("\\", "_")[:50]
+            screenshot_filename = f"ERROR_{ma_tkhai}_{safe_error_reason}_{timestamp}.png"
+            screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
+            
+            # Chụp màn hình
+            try:
+                # ✅ FIX: Frame không có method screenshot() trực tiếp
+                # Dùng page.screenshot() để chụp toàn bộ page (bao gồm frame)
+                # Hoặc nếu muốn chụp chỉ frame, dùng frame.locator('body').screenshot()
+                if frame:
+                    # Thử chụp frame content trước (nếu được)
+                    try:
+                        frame_body = frame.locator('body')
+                        await frame_body.screenshot(path=screenshot_path, timeout=5000)
+                        if os.path.exists(screenshot_path):
+                            file_size = os.path.getsize(screenshot_path)
+                            logger.warning(f"📸 [{ma_tkhai}] Screenshot saved (frame): {screenshot_path} ({file_size} bytes) - Error: {error_reason}")
+                            return screenshot_path
+                    except Exception as frame_e:
+                        logger.debug(f"📸 [{ma_tkhai}] Cannot screenshot frame directly: {frame_e}, trying page screenshot")
+                
+                # Fallback: Chụp toàn bộ page (sẽ bao gồm frame)
+                await page.screenshot(path=screenshot_path, full_page=True, timeout=5000)
+                
+                if os.path.exists(screenshot_path):
+                    file_size = os.path.getsize(screenshot_path)
+                    logger.warning(f"📸 [{ma_tkhai}] Screenshot saved (page): {screenshot_path} ({file_size} bytes) - Error: {error_reason}")
+                    return screenshot_path
+                else:
+                    logger.warning(f"📸 [{ma_tkhai}] Screenshot file not created: {screenshot_path}")
+                    return None
+            except Exception as e:
+                logger.warning(f"📸 [{ma_tkhai}] Error taking screenshot: {e}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"📸 [{ma_tkhai}] Error in _take_screenshot_on_download_error: {e}")
+            return None
+    
+    async def _navigate_to_page(self, frame, target_page: int) -> bool:
+        """
+        Navigate đến trang cụ thể bằng cách click vào link pagination
+        
+        Args:
+            frame: Frame hiện tại
+            target_page: Số trang cần navigate (1, 2, 3, ...)
+        
+        Returns:
+            True nếu navigate thành công, False nếu fail
+        """
+        try:
+            # ✅ FIX: Check trang hiện tại trước, nếu đang ở target page thì không cần navigate
+            pagination_info = await self._extract_pagination_info(frame)
+            if pagination_info:
+                current_page = pagination_info.get("current_page", 0)
+                if current_page == target_page:
+                    logger.info(f"✅ Already on page {target_page}")
+                    return True
+            
+            # Nếu là trang 1 và không có pagination info, giả định đang ở trang 1
+            if target_page == 1 and not pagination_info:
+                logger.info(f"✅ Assuming already on page 1 (no pagination info)")
+                return True
+            
+            # Đợi pagination div xuất hiện
+            try:
+                pagination_div = frame.locator('#currAcc').first
+                await pagination_div.wait_for(timeout=5000)
+            except:
+                logger.warning(f"⚠️ Cannot find #currAcc div")
+                # Nếu không có pagination div và target là trang 1, giả định OK
+                if target_page == 1:
+                    return True
+                return False
+            
+            # ✅ FIX: Tìm link bằng nhiều cách
+            # Cách 1: Tìm tất cả link trong pagination và check href có chứa pn={target_page}
+            # (Handle cả &&pn= và &pn=)
+            link = None
+            all_links = pagination_div.locator('a')
+            link_count = await all_links.count()
+            
+            for i in range(link_count):
+                link_elem = all_links.nth(i)
+                href = await link_elem.get_attribute('href') or ''
+                # Check nhiều pattern: pn=2, &pn=2, &&pn=2
+                if f'pn={target_page}' in href:
+                    link = link_elem
+                    break
+            
+            # Cách 2: Nếu không tìm thấy qua href, tìm link có text chính xác = target_page
+            if not link:
+                for i in range(link_count):
+                    link_elem = all_links.nth(i)
+                    text = await link_elem.text_content()
+                    if text and text.strip() == str(target_page):
+                        link = link_elem
+                        break
+            
+            # Click vào link nếu tìm thấy
+            if link:
+                await link.click()
+                await asyncio.sleep(1)  # Đợi page load
+                
+                # Verify navigation thành công bằng cách check pagination info
+                try:
+                    await asyncio.sleep(0.5)  # Đợi thêm một chút
+                    pagination_info = await self._extract_pagination_info(frame)
+                    if pagination_info:
+                        current_page = pagination_info.get("current_page", 0)
+                        if current_page == target_page:
+                            logger.info(f"✅ Navigated to page {target_page} (verified)")
+                            return True
+                        else:
+                            logger.warning(f"⚠️ Navigation verification failed: expected page {target_page}, got {current_page}")
+                    else:
+                        logger.warning(f"⚠️ Cannot verify navigation (no pagination info)")
+                        # Vẫn return True vì đã click được
+                        return True
+                except Exception as verify_e:
+                    logger.warning(f"⚠️ Error verifying navigation: {verify_e}")
+                    # Vẫn return True vì đã click được
+                    return True
+            else:
+                logger.warning(f"⚠️ Cannot find link to page {target_page}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Error navigating to page {target_page}: {e}")
+            return False
+    
+    async def _extract_pagination_info(self, frame) -> Optional[Dict[str, int]]:
+        """
+        Extract pagination info từ #currAcc div
+        Returns: {"current_page": 1, "total_pages": 2, "total_records": 13} hoặc None
+        """
+        try:
+            pagination_div = frame.locator('#currAcc').first
+            if await pagination_div.count() == 0:
+                return None
+            
+            # Lấy innerHTML để có thể parse <b> tags
+            html_content = await pagination_div.inner_html()
+            
+            # Pattern 1: "Trang 1/<b>2</b>. Có <b>13</b> bản ghi."
+            import re
+            pattern_html = r"Trang\s+(\d+)/<b>(\d+)</b>\.\s+Có\s+<b>(\d+)</b>\s+bản\s+ghi"
+            match = re.search(pattern_html, html_content)
+            
+            if match:
+                current_page = int(match.group(1))
+                total_pages = int(match.group(2))
+                total_records = int(match.group(3))
+                return {
+                    "current_page": current_page,
+                    "total_pages": total_pages,
+                    "total_records": total_records
+                }
+            
+            # Pattern 2: "Trang 1/2. Có 13 bản ghi." (plain text)
+            text_content = await pagination_div.text_content()
+            pattern_text = r"Trang\s+(\d+)/(\d+)\.\s+Có\s+(\d+)\s+bản\s+ghi"
+            match = re.search(pattern_text, text_content)
+            
+            if match:
+                current_page = int(match.group(1))
+                total_pages = int(match.group(2))
+                total_records = int(match.group(3))
+                return {
+                    "current_page": current_page,
+                    "total_pages": total_pages,
+                    "total_records": total_records
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting pagination info: {e}")
+            return None
+    
+    async def _extract_download_params(self, frame) -> Optional[Dict[str, str]]:
+        """
+        Lấy các tham số dse_* từ form (cần thiết để build URL download)
+        ✅ FIX: Loại bỏ dse_pageId và pn (pagination params), dùng dse_pageId cố định khi download
+        """
+        try:
+            params = {}
+            
+            # Lấy từ hidden inputs trong form
+            form = frame.locator('form[name="traCuuKhaiForm"], form#traCuuKhaiForm').first
+            if await form.count() > 0:
+                inputs = form.locator('input[type="hidden"]')
+                input_count = await inputs.count()
+                
+                for i in range(input_count):
+                    input_elem = inputs.nth(i)
+                    name = await input_elem.get_attribute('name')
+                    value = await input_elem.get_attribute('value')
+                    if name and value:
+                        # ✅ FIX: Bỏ qua dse_pageId và pn (pagination params)
+                        # dse_pageId trong form là số trang pagination (6, 7, ...)
+                        # Khi download cần dùng dse_pageId cố định (14 hoặc 8)
+                        if name in ['dse_pageId', 'pn']:
+                            continue
+                        params[name] = value
+            
+            # Thêm các params cố định
+            params.update({
+                'dse_operationName': 'traCuuToKhaiProc',
+                'dse_processorState': 'viewTraCuuTkhai',
+                'dse_nextEventName': 'downTkhai',
+                'dse_applicationId': '-1'
+            })
+            
+            logger.info(f"Extracted download params: {list(params.keys())}")
+            return params if params.get('dse_sessionId') else None
+            
+        except Exception as e:
+            logger.error(f"Error extracting download params: {e}")
+            return None
+    
+    async def _download_one_via_url(
+        self, 
+        session_id: str,
+        ma_tkhai: str, 
+        item: Dict,
+        base_params: Dict[str, str],
+        temp_dir: str,
+        frame=None
+    ) -> Optional[Dict]:
+        """
+        Download 1 file bằng cách gọi URL trực tiếp với httpx
+        ✅ FIX: Thêm frame parameter để có thể navigate về đúng trang nếu cần
+        """
+        try:
+            # Build URL với params
+            params = base_params.copy()
+            params['messageId'] = ma_tkhai
+            
+            # ✅ FIX: Set dse_pageId cố định (không dùng từ form)
+            # Nếu có dse_processorId, dùng pageId=8, ngược lại dùng pageId=14
+            if params.get('dse_processorId'):
+                params['dse_pageId'] = '8'
+            else:
+                params['dse_pageId'] = '14'
+            
+            # ✅ FIX: Thêm pn (page number) dựa trên page_number của item
+            # pn cần match với trang của item để download đúng
+            page_number = item.get("page_number", 1)
+            params['pn'] = str(page_number)
+            
+            # Xác định download_type để set dse_nextEventName
+            download_type = item.get("download_type", "downloadTkhai")
+            if download_type == "downloadBke":
+                params['dse_nextEventName'] = 'downBke'
+            else:
+                params['dse_nextEventName'] = 'downTkhai'
+            
+            download_url = "https://thuedientu.gdt.gov.vn/etaxnnt/Request"
+            
+            # Lấy httpx client (đã có cookies từ session)
+            http_client = await self._get_http_client(session_id)
+            if not http_client:
+                logger.warning(f"No http client for {ma_tkhai}")
+                # ✅ Chụp màn hình khi không có http client
+                await self._take_screenshot_on_download_error(
+                    session_id, ma_tkhai, "No_http_client", frame
+                )
+                return None
+            
+            # ✅ FIX: Retry logic cho tờ thuyết minh và các file có thể fail
+            max_retries = 2 if download_type == "downloadBke" else 1
+            retry_delay = 1.0
+            
+            for retry in range(max_retries):
+                if retry > 0:
+                    logger.info(f"[{ma_tkhai}] Retry {retry}/{max_retries}...")
+                    await asyncio.sleep(retry_delay)
+                
+                # ✅ FIX QUAN TRỌNG: Navigate về đúng trang TRƯỚC KHI download (cả lần đầu và retry)
+                # Điều này đảm bảo browser đang ở đúng trang của item, tránh server trả về HTML của trang khác
+                if frame:
+                    try:
+                        navigate_success = await self._navigate_to_page(frame, page_number)
+                        if navigate_success:
+                            # Đợi table load sau khi navigate
+                            try:
+                                table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
+                                await table_body.wait_for(timeout=5000)
+                                await asyncio.sleep(0.5)  # Đợi thêm một chút để đảm bảo page đã load xong
+                            except:
+                                logger.warning(f"[{ma_tkhai}] Table not found after navigating to page {page_number}")
+                            
+                            # Refresh params sau khi navigate (có thể thay đổi)
+                            fresh_params = await self._extract_download_params(frame)
+                            if fresh_params:
+                                params.update({
+                                    'dse_sessionId': fresh_params.get('dse_sessionId', params.get('dse_sessionId')),
+                                    'dse_processorId': fresh_params.get('dse_processorId', params.get('dse_processorId')),
+                                })
+                                logger.debug(f"[{ma_tkhai}] Navigated to page {page_number} and refreshed params")
+                        else:
+                            logger.warning(f"[{ma_tkhai}] Failed to navigate to page {page_number}")
+                            # Nếu navigate fail, vẫn thử download (có thể đã ở đúng trang)
+                    except Exception as nav_e:
+                        logger.warning(f"[{ma_tkhai}] Error navigating to page {page_number}: {nav_e}")
+                        # Nếu có lỗi navigate, vẫn thử download (có thể đã ở đúng trang)
+                
+                # Download với timeout
+                logger.info(f"[{ma_tkhai}] Downloading via httpx... (type: {download_type}, retry: {retry+1}/{max_retries})")
+                try:
+                    response = await http_client.get(download_url, params=params, timeout=30.0)
+                except Exception as e:
+                    logger.warning(f"[{ma_tkhai}] Request error: {e}")
+                    if retry < max_retries - 1:
+                        continue
+                    # ✅ Chụp màn hình khi fail sau khi retry hết
+                    await self._take_screenshot_on_download_error(
+                        session_id, ma_tkhai, f"Request_error_{str(e)[:30]}", frame
+                    )
+                    return None
+            
+                if response.status_code != 200:
+                    logger.warning(f"[{ma_tkhai}] HTTP {response.status_code}")
+                    if retry < max_retries - 1:
+                        continue
+                    # ✅ Chụp màn hình khi fail sau khi retry hết
+                    await self._take_screenshot_on_download_error(
+                        session_id, ma_tkhai, f"HTTP_{response.status_code}", frame
+                    )
+                    return None
+                
+                # ✅ FIX: Check response 0 bytes (có thể là empty response hoặc redirect)
+                if len(response.content) == 0:
+                    logger.warning(f"[{ma_tkhai}] Empty response (0 bytes, retry: {retry+1}/{max_retries})")
+                    # Check response headers để xem có redirect không
+                    location = response.headers.get('location', '')
+                    if location:
+                        logger.warning(f"[{ma_tkhai}] Response has Location header: {location}")
+                    if retry < max_retries - 1:
+                        continue
+                    # ✅ Chụp màn hình khi fail sau khi retry hết
+                    await self._take_screenshot_on_download_error(
+                        session_id, ma_tkhai, "Empty_response_0_bytes", frame
+                    )
+                    return None
+                
+                content = response.content
+                content_type = response.headers.get('content-type', '').lower()
+                
+                # ✅ FIX: Check content-type header trước
+                is_xml_by_type = 'xml' in content_type or 'text/xml' in content_type
+                is_xlsx_by_type = 'spreadsheet' in content_type or 'excel' in content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type
+                is_xls_by_type = 'application/vnd.ms-excel' in content_type or 'application/msexcel' in content_type
+                
+                # Validate XML/XLSX/XLS by content
+                is_xml = content.startswith(b'<?xml') or b'<HSoTKhai' in content or b'<TKhai' in content or b'<BKe' in content
+                
+                # ✅ FIX: XLSX files start with PK (ZIP signature)
+                # ZIP local file header: PK\x03\x04
+                # ZIP end of central directory: PK\x05\x06
+                # Check ở đầu file (có thể có BOM nhưng thường không)
+                is_xlsx = (len(content) >= 2 and content[:2] == b'PK') or \
+                          (len(content) >= 4 and content[0:2] == b'PK' and content[2:4] in [b'\x03\x04', b'\x05\x06'])
+                
+                # ✅ FIX: XLS files (Excel 97-2003) start with OLE2 signature
+                # OLE2 signature: D0 CF 11 E0 A1 B1 1A E1 (8 bytes đầu)
+                # ✅ FIX: Mở rộng check cho cả downloadTkhai khi content-type là application/octet-stream
+                # (BCTC có type downloadTkhai nhưng server có thể trả về XLS file)
+                is_xls = False
+                if len(content) >= 8:
+                    xls_signature = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
+                    if content[:8] == xls_signature:
+                        # Accept XLS cho downloadBke hoặc khi content-type không rõ ràng
+                        if download_type == "downloadBke" or 'application/octet-stream' in content_type or content_type == '':
+                            is_xls = True
+                            logger.info(f"[{ma_tkhai}] Detected XLS file (Excel 97-2003) - OLE2 signature")
+                
+                # ✅ FIX: Check xem có phải là HTML error page không (ưu tiên check này trước)
+                # Check trong toàn bộ content (không chỉ 500 bytes đầu) vì HTML có thể nằm ở giữa
+                is_html = (b'<!DOCTYPE html>' in content or 
+                          b'<html' in content.lower()[:1000] or 
+                          b'<HTML' in content[:1000] or
+                          'html' in content_type or
+                          (len(content) > 1000 and b'<body' in content.lower()[:2000] and b'<head' in content.lower()[:2000]))
+                
+                # ✅ FIX: Nếu là HTML, save file tạm để debug và reject
+                if is_html:
+                    # Save file tạm để inspect
+                    debug_file = os.path.join(temp_dir, f"DEBUG_{ma_tkhai}_retry{retry+1}.html")
+                    try:
+                        with open(debug_file, 'wb') as f:
+                            f.write(content)
+                        logger.warning(f"[{ma_tkhai}] Server returned HTML page (saved to {debug_file}, content-type: {content_type}, size: {len(content)} bytes, retry: {retry+1}/{max_retries})")
+                    except:
+                        pass
+                    
+                    content_preview = content[:500].decode('utf-8', errors='ignore')
+                    logger.debug(f"[{ma_tkhai}] Content preview: {content_preview[:200]}")
+                    if retry < max_retries - 1:
+                        continue
+                    # ✅ Chụp màn hình khi fail sau khi retry hết
+                    await self._take_screenshot_on_download_error(
+                        session_id, ma_tkhai, "HTML_response", frame
+                    )
+                    return None
+                
+                # ✅ FIX: Nếu content hợp lệ (XML/XLSX/XLS), break khỏi retry loop
+                if (is_xml or is_xlsx or is_xls) or (is_xml_by_type or is_xlsx_by_type or is_xls_by_type):
+                    break
+                
+                # ✅ FIX: Nếu content-type là application/octet-stream và size hợp lý (>1000 bytes)
+                # Có thể là XLSX file (server không set đúng content-type)
+                # Check xem có phải là binary file không (không phải text/HTML)
+                # ✅ FIX: Check với 'in' thay vì '==' vì có thể có thêm charset=utf-8
+                if 'application/octet-stream' in content_type or content_type == '':
+                    if len(content) > 1000:
+                        # ✅ FIX: Check XLS signature trước (OLE2 - 8 bytes đầu)
+                        # ✅ FIX: Mở rộng check cho cả downloadTkhai (BCTC có type downloadTkhai nhưng có thể là XLS)
+                        if len(content) >= 8:
+                            xls_signature = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
+                            if content[:8] == xls_signature:
+                                logger.info(f"[{ma_tkhai}] Detected XLS file (Excel 97-2003) despite content-type: {content_type}")
+                                is_xls = True
+                                break
+                        
+                        # ✅ FIX: Check PK signature ở nhiều vị trí (có thể bị wrap hoặc offset)
+                        # Check ở đầu file (0-100 bytes)
+                        pk_positions = []
+                        for offset in range(0, min(100, len(content) - 2)):
+                            if content[offset:offset+2] == b'PK':
+                                pk_positions.append(offset)
+                                # Check xem có phải là ZIP/XLSX signature hợp lệ không
+                                if offset + 4 <= len(content):
+                                    next_bytes = content[offset+2:offset+4]
+                                    if next_bytes in [b'\x03\x04', b'\x05\x06', b'\x07\x08']:
+                                        logger.info(f"[{ma_tkhai}] Detected XLSX/ZIP file (PK signature at offset {offset}) despite content-type: {content_type}")
+                                        is_xlsx = True
+                                        break
+                        
+                        if is_xlsx:
+                            break
+                            
+                        # XML signature: <?xml (check ở đầu file)
+                        first_bytes = content[:10] if len(content) >= 10 else content
+                        if first_bytes[:5] == b'<?xml':
+                            logger.info(f"[{ma_tkhai}] Detected XML file despite content-type: {content_type}")
+                            is_xml = True
+                            break
+                        
+                        # ✅ FIX: Nếu tìm thấy PK nhưng không phải signature hợp lệ, log để debug
+                        if pk_positions:
+                            logger.debug(f"[{ma_tkhai}] Found PK at positions {pk_positions} but not valid ZIP signature")
+                        # Nếu không phải HTML và size hợp lý, có thể là binary file hợp lệ
+                        # Đặc biệt cho downloadBke (tờ thuyết minh) - thường là XLSX
+                        elif len(content) > 5000:
+                            # ✅ FIX: Bỏ lưu .bin → Lưu HTML của frame browser để debug
+                            logger.warning(f"[{ma_tkhai}] Unknown binary content (content-type: {content_type}, size: {len(content)} bytes). First bytes (hex): {first_bytes.hex()[:40]}")
+                            try:
+                                # Lưu HTML của frame hiện tại để debug (thay vì lưu .bin)
+                                if frame:
+                                    frame_html = await frame.content()
+                                    debug_html_file = os.path.join(temp_dir, f"DEBUG_{ma_tkhai}_retry{retry+1}_page.html")
+                                    with open(debug_html_file, 'w', encoding='utf-8') as f:
+                                        f.write(frame_html)
+                                    logger.warning(f"[{ma_tkhai}] Saved browser page HTML to {debug_html_file}")
+                                # ✅ Chụp màn hình ngay khi lưu file debug
+                                await self._take_screenshot_on_download_error(
+                                    session_id, ma_tkhai, f"Unknown_binary_{len(content)}bytes", frame
+                                )
+                            except Exception as e:
+                                logger.warning(f"[{ma_tkhai}] Error saving debug HTML: {e}")
+                            
+                            # Log để debug
+                            logger.debug(f"[{ma_tkhai}] First 100 bytes (hex): {content[:100].hex()}")
+                            # Check xem có phải là text/HTML không (check một phần content)
+                            try:
+                                text_sample = content[:1000].decode('utf-8', errors='ignore')
+                                if '<html' in text_sample.lower() or '<!doctype' in text_sample.lower():
+                                    logger.warning(f"[{ma_tkhai}] Content appears to be HTML despite size")
+                                    if retry < max_retries - 1:
+                                        continue
+                                    return None
+                            except:
+                                pass
+                            
+                            # Retry để xem có phải là timing issue không
+                            if retry < max_retries - 1:
+                                continue
+                            # Nếu là downloadBke và size lớn, có thể accept (server có thể trả về file nhưng không đúng format)
+                            # Nhưng để an toàn, reject nếu không detect được signature
+                            # ✅ Chụp màn hình khi fail sau khi retry hết
+                            await self._take_screenshot_on_download_error(
+                                session_id, ma_tkhai, f"Unknown_binary_{len(content)}bytes", frame
+                            )
+                            return None
+                
+                # ✅ FIX: Nếu không detect được, save file debug và log
+                logger.warning(f"[{ma_tkhai}] Not XML/XLSX/XLS content (content-type: {content_type}, size: {len(content)} bytes, retry: {retry+1}/{max_retries})")
+                
+                # ✅ FIX: Bỏ lưu .bin → Lưu HTML của frame browser để debug
+                if len(content) > 1000 and frame:
+                    try:
+                        frame_html = await frame.content()
+                        debug_html_file = os.path.join(temp_dir, f"DEBUG_{ma_tkhai}_retry{retry+1}_page.html")
+                        with open(debug_html_file, 'w', encoding='utf-8') as f:
+                            f.write(frame_html)
+                        logger.warning(f"[{ma_tkhai}] Saved browser page HTML to {debug_html_file}")
+                        # ✅ Chụp màn hình ngay khi lưu file debug
+                        await self._take_screenshot_on_download_error(
+                            session_id, ma_tkhai, f"Invalid_content_{len(content)}bytes", frame
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{ma_tkhai}] Failed to save debug HTML: {e}")
+                
+                # Log thêm để debug
+                if len(content) > 0:
+                    first_bytes = content[:100] if len(content) >= 100 else content
+                    logger.debug(f"[{ma_tkhai}] First bytes (hex): {first_bytes.hex()[:200]}")
+                    # Thử decode để xem có phải text không
+                    try:
+                        text_preview = content[:200].decode('utf-8', errors='ignore')
+                        logger.debug(f"[{ma_tkhai}] First 200 chars (text): {text_preview[:100]}")
+                    except:
+                        pass
+                
+                # Retry nếu còn lượt
+                if retry < max_retries - 1:
+                    continue
+                # ✅ Chụp màn hình khi fail sau khi retry hết
+                await self._take_screenshot_on_download_error(
+                    session_id, ma_tkhai, f"Invalid_content_{content_type}_{len(content)}bytes", frame
+                )
+                return None
+            
+            # ✅ FIX: Nếu ra khỏi loop mà vẫn không có content hợp lệ, return None
+            if not (is_xml or is_xlsx or is_xls) and not (is_xml_by_type or is_xlsx_by_type or is_xls_by_type):
+                logger.warning(f"[{ma_tkhai}] Failed after {max_retries} retries")
+                # ✅ Chụp màn hình khi fail sau khi retry hết
+                await self._take_screenshot_on_download_error(
+                    session_id, ma_tkhai, f"Failed_after_{max_retries}_retries", frame
+                )
+                return None
+            
+            # Lưu file với extension đúng
+            file_name = item["file_name"]
+            # ✅ FIX: Xác định extension dựa trên file type thực tế
+            if is_xls:
+                file_ext = ".xls"
+            elif is_xlsx or (download_type == "downloadBke" and not is_xml):
+                file_ext = ".xlsx"
+            else:
+                file_ext = ".xml"
+            
+            # ✅ FIX: Validate mã giao dịch trong file XML để đảm bảo không bị lộn file
+            if is_xml:
+                try:
+                    content_str = content.decode('utf-8', errors='ignore')
+                    # Check xem mã giao dịch có trong file không
+                    if ma_tkhai not in content_str:
+                        logger.warning(f"⚠️ [{ma_tkhai}] Mã giao dịch không tìm thấy trong XML content - có thể file bị lộn!")
+                        # Vẫn lưu nhưng log warning để debug
+                except:
+                    pass
+            
+            # Nếu file_name đã có extension hợp lệ, giữ nguyên, nếu không thì thêm extension
+            if not file_name.endswith((".xml", ".xlsx", ".xls")):
+                save_path = os.path.join(temp_dir, file_name + file_ext)
+            else:
+                save_path = os.path.join(temp_dir, file_name)
+            
+            with open(save_path, 'wb') as f:
+                f.write(content)
+            
+            # Verify
+            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                logger.info(f"✅ [{ma_tkhai}] Downloaded {len(content)} bytes -> {os.path.basename(save_path)}")
+                return item
+            else:
+                logger.warning(f"❌ [{ma_tkhai}] File not saved")
+                # ✅ Chụp màn hình khi file không được save
+                await self._take_screenshot_on_download_error(
+                    session_id, ma_tkhai, "File_not_saved", frame
+                )
+                return None
+                
+        except asyncio.TimeoutError:
+            logger.warning(f"⏱️ [{ma_tkhai}] Timeout")
+            # ✅ Chụp màn hình khi timeout
+            await self._take_screenshot_on_download_error(
+                session_id, ma_tkhai, "Timeout", frame
+            )
+            return None
+        except Exception as e:
+            logger.warning(f"❌ [{ma_tkhai}] Error: {e}")
+            # ✅ Chụp màn hình khi có exception
+            await self._take_screenshot_on_download_error(
+                session_id, ma_tkhai, f"Exception_{str(e)[:30]}", frame
+            )
+            return None
+    
     async def _batch_download_one(self, session: SessionData, item: Dict, temp_dir: str, ssid: str, frame, session_id: str = None) -> Optional[Dict]:
-        """Download một item và trả về item nếu thành công"""
+        """
+        Download một item bằng cách gọi JS function và intercept response
+        ✅ FIXED: Wait for navigation, then extract XML from final page
+        """
         try:
             id_tk = item["id"]
             file_name = item["file_name"]
             has_link = item.get("has_link", False)
-            download_type = item.get("download_type")
+            download_type = item.get("download_type", "downloadTkhai")
+            
+            # Bỏ qua trường hợp không có link
+            if not has_link:
+                logger.info(f"Skipping {id_tk} - no download link (special tokhai)")
+                return None
+            
+            logger.info(f"[DEBUG] Downloading {id_tk} via {download_type}")
             
             page = session.page
             
-            # Lấy session ID và processor ID từ form (cần cho cả 2 loại)
-            current_ssid = ssid
-            if not current_ssid or current_ssid == "NotFound":
-                try:
-                    dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
-                    if await dse_session_input.count() > 0:
-                        current_ssid = await dse_session_input.get_attribute('value') or ""
-                except:
-                    pass
+            # ============================================
+            # ✅ STRATEGY: Gọi JS → Đợi navigation → Lấy XML từ page cuối cùng
+            # ============================================
             
-            if not current_ssid or current_ssid == "NotFound":
+            try:
+                # Bước 1: Gọi JavaScript function (trigger navigation)
+                js_function = "downloadBke" if download_type == "downloadBke" else "downloadTkhai"
+                logger.info(f"[DEBUG] Calling {js_function}('{id_tk}')")
+                
+                # Track navigation
+                navigation_promise = page.wait_for_load_state('domcontentloaded', timeout=30000)
+                
+                # Gọi function trong frame
+                await frame.evaluate(f"{js_function}('{id_tk}')")
+                logger.info(f"[DEBUG] Called {js_function}('{id_tk}')")
+                
+                # Bước 2: Đợi navigation hoàn tất
                 try:
-                    frame_url = frame.url
-                    match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
-                    if match:
-                        current_ssid = match.group(1)
+                    await navigation_promise
+                    logger.info(f"[DEBUG] Navigation completed for {id_tk}")
                 except:
-                    pass
-            
-            dse_processor_id = ""
-            if current_ssid and current_ssid != "NotFound":
-                try:
-                    processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
-                    if await processor_id_input.count() > 0:
-                        dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
-                except:
-                    pass
-            
-            if has_link and current_ssid and current_ssid != "NotFound":
-                # Tờ khai có link - build URL từ id_tk
-                if download_type == "downloadBke":
-                    # File thuyết minh - dùng downloadBke
-                    if dse_processor_id:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downBke&messageId={id_tk}"
-                    else:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downBke&messageId={id_tk}"
-                else:
-                    # Tờ khai thông thường - dùng downloadTkhai
-                    if dse_processor_id:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
-                    else:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
+                    # Nếu không có navigation event, đợi một chút
+                    await asyncio.sleep(2)
+                    logger.info(f"[DEBUG] No navigation event, waited 2s for {id_tk}")
                 
-                # Download bằng new_page.goto()
-                new_page = None
-                try:
-                    new_page = await session.context.new_page()
-                    new_page.set_default_timeout(30000)
-                    
-                    download_occurred = False
-                    response_data = None
-                    
-                    async def handle_response(response):
-                        nonlocal download_occurred, response_data
-                        content_type = response.headers.get('content-type', '').lower()
-                        if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
-                            download_occurred = True
-                            response_data = await response.body()
-                        elif 'xlsx' in content_type or response.url.endswith('.xlsx') or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
-                            download_occurred = True
-                            response_data = await response.body()
-                    
-                    new_page.on("response", handle_response)
-                    response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(1)
-                    
-                    if download_occurred and response_data:
-                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                        with open(save_path, 'wb') as f:
-                            f.write(response_data)
-                        
-                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                            logger.info(f"Downloaded {id_tk} ({download_type}) -> {file_name}")
-                            return item
-                    else:
-                        try:
-                            async with new_page.expect_download(timeout=5000) as download_info:
-                                await new_page.reload(wait_until="domcontentloaded")
+                # Bước 3: Đợi content load xong
+                await asyncio.sleep(1)
+                
+                # Bước 4: Lấy content từ page hiện tại
+                page_content = await page.content()
+                logger.info(f"[DEBUG] Got page content, length: {len(page_content)}")
+                
+                # Bước 5: Validate content
+                is_xml = '<?xml' in page_content or '<HSoTKhai' in page_content or '<TKhai' in page_content
+                is_error_page = 'timeout.jsp' in page.url or 'error' in page.url.lower()
+                is_html_page = '<!DOCTYPE html>' in page_content or '<html' in page_content
+                
+                if is_error_page:
+                    logger.warning(f"[DEBUG] Error page detected for {id_tk}")
+                    return None
+                
+                if is_xml and not is_html_page:
+                    # Content là XML thuần túy
+                    response_data = page_content.encode('utf-8')
+                    logger.info(f"[DEBUG] Valid XML content for {id_tk}: {len(response_data)} bytes")
+                elif '<?xml' in page_content:
+                    # XML nằm trong HTML (có thể trong <pre> tag hoặc embedded)
+                    # Extract XML từ page
+                    try:
+                        # Tìm XML trong page content
+                        xml_start = page_content.find('<?xml')
+                        if xml_start >= 0:
+                            # Tìm closing tag cuối cùng
+                            # Giả sử XML kết thúc bằng </HSoTKhai> hoặc tag tương tự
+                            closing_tags = ['</HSoTKhai>', '</TKhai>', '</BKe>']
+                            xml_end = -1
+                            for tag in closing_tags:
+                                pos = page_content.rfind(tag)
+                                if pos > xml_start:
+                                    xml_end = pos + len(tag)
+                                    break
                             
-                            download = await download_info.value
-                            file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                            save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                            await download.save_as(save_path)
-                            
-                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                logger.info(f"Downloaded {id_tk} ({download_type}) via download event -> {file_name}")
-                                return item
-                        except:
-                            if response:
-                                content = await response.body()
-                                if content and len(content) > 100:
-                                    file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                                    save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                                    with open(save_path, 'wb') as f:
-                                        f.write(content)
-                                    
-                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                        logger.info(f"Downloaded {id_tk} ({download_type}) from response body -> {file_name}")
-                                        return item
-                except Exception as e2:
-                    logger.warning(f"Error downloading {id_tk} via new_page.goto(): {e2}")
-                    if session_id:
-                        try:
-                            http_client = await self._get_http_client(session_id)
-                            if http_client:
-                                response = await http_client.get(download_url, timeout=30.0)
-                                if response.status_code == 200:
-                                    content = response.content
-                                    if content and len(content) > 100:
-                                        file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
-                                        save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
-                                        with open(save_path, 'wb') as f:
-                                            f.write(content)
-                                        
-                                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                            logger.info(f"Downloaded {id_tk} ({download_type}) via httpx -> {file_name}")
-                                            return item
-                        except:
-                            pass
-                finally:
-                    if new_page:
-                        try:
-                            await new_page.close()
-                        except:
-                            pass
-                return None
-            elif current_ssid and current_ssid != "NotFound":
-                # Special tokhai - không có link
-                # Special tokhai - same logic as before
-                current_ssid = ssid
-                
-                if not current_ssid or current_ssid == "NotFound":
-                    try:
-                        dse_session_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_sessionId"], form#traCuuKhaiForm input[name="dse_sessionId"], input[name="dse_sessionId"]').first
-                        if await dse_session_input.count() > 0:
-                            current_ssid = await dse_session_input.get_attribute('value') or ""
-                    except:
-                        pass
-                
-                if not current_ssid or current_ssid == "NotFound":
-                    try:
-                        frame_url = frame.url
-                        match = re.search(r"[&?]dse_sessionId=([^&]+)", frame_url)
-                        if match:
-                            current_ssid = match.group(1)
-                    except:
-                        pass
-                
-                if current_ssid and current_ssid != "NotFound":
-                    dse_processor_id = ""
-                    try:
-                        processor_id_input = frame.locator('form[name="traCuuKhaiForm"] input[name="dse_processorId"], form#traCuuKhaiForm input[name="dse_processorId"], input[name="dse_processorId"]').first
-                        if await processor_id_input.count() > 0:
-                            dse_processor_id = await processor_id_input.first.get_attribute('value') or ""
-                    except:
-                        pass
-                    
-                    if dse_processor_id:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=8&dse_processorState=viewTraCuuTkhai&dse_processorId={dse_processor_id}&dse_nextEventName=downTkhai&messageId={id_tk}"
-                    else:
-                        download_url = f"{BASE_URL}/etaxnnt/Request?dse_sessionId={current_ssid}&dse_applicationId=-1&dse_operationName=traCuuToKhaiProc&dse_pageId=14&dse_processorState=viewTraCuuTkhai&dse_nextEventName=downTkhai&messageId={id_tk}"
-                    
-                    new_page = None
-                    try:
-                        new_page = await session.context.new_page()
-                        new_page.set_default_timeout(30000)
-                        
-                        download_occurred = False
-                        response_data = None
-                        
-                        async def handle_response(response):
-                            nonlocal download_occurred, response_data
-                            content_type = response.headers.get('content-type', '').lower()
-                            if 'xml' in content_type or response.url.endswith('.xml') or 'application/xml' in content_type or 'text/xml' in content_type:
-                                download_occurred = True
-                                response_data = await response.body()
-                        
-                        new_page.on("response", handle_response)
-                        response = await new_page.goto(download_url, wait_until="domcontentloaded", timeout=30000)
-                        await asyncio.sleep(1)
-                        
-                        if download_occurred and response_data:
-                            save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                            with open(save_path, 'wb') as f:
-                                f.write(response_data)
-                            
-                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
-                                return item
+                            if xml_end > xml_start:
+                                xml_content = page_content[xml_start:xml_end]
+                                response_data = xml_content.encode('utf-8')
+                                logger.info(f"[DEBUG] Extracted XML from HTML for {id_tk}: {len(response_data)} bytes")
+                            else:
+                                logger.warning(f"[DEBUG] Could not find XML closing tag for {id_tk}")
+                                return None
                         else:
-                            try:
-                                async with new_page.expect_download(timeout=5000) as download_info:
-                                    await new_page.reload(wait_until="domcontentloaded")
-                                
-                                download = await download_info.value
-                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                await download.save_as(save_path)
-                                
-                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                    logger.info(f"Downloaded special (no link) {id_tk} via download event -> {file_name}")
-                                    return item
-                            except:
-                                if response:
-                                    content = await response.body()
-                                    if content and len(content) > 100:
-                                        save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                        with open(save_path, 'wb') as f:
-                                            f.write(content)
-                                        
-                                        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                            logger.info(f"Downloaded special (no link) {id_tk} from response body -> {file_name}")
-                                            return item
-                    except Exception as e2:
-                        logger.warning(f"Error downloading special {id_tk}: {e2}")
-                        if session_id:
-                            try:
-                                http_client = await self._get_http_client(session_id)
-                                if http_client:
-                                    response = await http_client.get(download_url, timeout=30.0)
-                                    if response.status_code == 200:
-                                        content = response.content
-                                        if content and len(content) > 100:
-                                            save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
-                                            with open(save_path, 'wb') as f:
-                                                f.write(content)
-                                            
-                                            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                                logger.info(f"Downloaded special (no link) {id_tk} via httpx -> {file_name}")
-                                                return item
-                            except:
-                                pass
-                    finally:
-                        if new_page:
-                            try:
-                                await new_page.close()
-                            except:
-                                pass
+                            logger.warning(f"[DEBUG] No XML found in page content for {id_tk}")
+                            return None
+                    except Exception as e:
+                        logger.warning(f"[DEBUG] Error extracting XML for {id_tk}: {e}")
+                        return None
+                else:
+                    # Không phải XML
+                    logger.warning(f"[DEBUG] Content is not XML for {id_tk}")
+                    logger.debug(f"[DEBUG] First 500 chars: {page_content[:500]}")
+                    return None
+                
+                # Bước 6: Lưu file
+                if response_data and len(response_data) > 100:
+                    file_ext = ".xlsx" if download_type == "downloadBke" else ".xml"
+                    save_path = os.path.join(temp_dir, file_name + file_ext if not file_name.endswith((".xml", ".xlsx")) else file_name)
+                    
+                    # Lưu file
+                    with open(save_path, 'wb') as f:
+                        f.write(response_data)
+                    
+                    # Verify file
+                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                        # Final validation: check file content
+                        with open(save_path, 'rb') as f:
+                            first_bytes = f.read(100)
+                            if b'<?xml' in first_bytes or b'<HSoTKhai' in first_bytes:
+                                logger.info(f"✅ Downloaded {id_tk} ({len(response_data)} bytes) -> {save_path}")
+                                return item
+                            else:
+                                logger.warning(f"❌ Downloaded file is not valid XML for {id_tk}")
+                                # Delete invalid file
+                                os.remove(save_path)
+                                return None
+                    else:
+                        logger.warning(f"❌ File not saved properly for {id_tk}")
+                        return None
+                else:
+                    logger.warning(f"❌ No valid response data for {id_tk}")
+                    return None
+                    
+            except Exception as inner_e:
+                logger.warning(f"❌ Error in download process for {id_tk}: {inner_e}")
                 return None
+                
         except Exception as e:
-            logger.warning(f"Error downloading {item.get('id', 'unknown')}: {e}")
+            logger.warning(f"❌ Error downloading {item.get('id', 'unknown')}: {e}")
             return None
     
-    async def _batch_download(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame, session_id: str = None):
+    async def _batch_download_optimized(
+        self,
+        session_id: str,
+        download_queue: List[Dict],
+        temp_dir: str,
+        frame,
+        batch_size: int = 3,
+        page_params_map: Dict[int, Dict[str, str]] = None,
+        progress_callback=None  # ✅ Callback để yield progress sau mỗi file
+    ) -> List[Dict]:
         """
-        Download nhiều file song song (tối ưu tốc độ)
+        Download với batching tối ưu:
+        - Dùng params tương ứng với từng trang
+        - Download theo batch (3-5 files/batch)
+        - Dùng httpx thay vì playwright navigation
+        
+        Returns: List các item đã download thành công
+        """
+        
+        # ✅ FIX: Group items theo page_number để dùng đúng params
+        items_by_page = {}
+        for item in download_queue:
+            page_num = item.get("page_number", 1)
+            if page_num not in items_by_page:
+                items_by_page[page_num] = []
+            items_by_page[page_num].append(item)
+        
+        logger.info(f"📋 Grouped {len(download_queue)} items into {len(items_by_page)} pages")
+        
+        if not page_params_map:
+            logger.error("❌ No page_params_map provided, cannot download")
+            return []
+        
+        # Bước 2: Download từng page với params tương ứng
+        total = len(download_queue)
+        successful_downloads = []
+        
+        logger.info(f"📦 Starting batch download: {total} files, batch_size={batch_size}")
+        
+        # Download từng page
+        for page_num, page_items in sorted(items_by_page.items()):
+            # Lấy params cho page này
+            base_params = page_params_map.get(page_num)
+            if not base_params:
+                logger.warning(f"⚠️ No params for page {page_num}, skipping {len(page_items)} items")
+                continue
+            
+            logger.info(f"📄 Downloading page {page_num}: {len(page_items)} items")
+            
+            # ✅ FIX: Navigate về đúng trang trước khi download (đảm bảo params đúng)
+            # Chỉ navigate nếu không phải trang 1 (vì đã ở trang 1 rồi)
+            if page_num > 1:
+                navigate_success = await self._navigate_to_page(frame, page_num)
+                if not navigate_success:
+                    logger.warning(f"⚠️ Cannot navigate to page {page_num}, skipping {len(page_items)} items")
+                    continue
+                
+                # Đợi table load và extract params lại (đảm bảo params mới nhất)
+                try:
+                    table_body = frame.locator('#allResultTableBody, table.md_list2 tbody, table#data_content_onday tbody').first
+                    await table_body.wait_for(timeout=5000)
+                    await asyncio.sleep(1)
+                    
+                    # Extract params lại từ trang này (có thể đã thay đổi sau khi navigate)
+                    fresh_params = await self._extract_download_params(frame)
+                    if fresh_params:
+                        base_params = fresh_params
+                        logger.info(f"✅ Refreshed params for page {page_num}")
+                except:
+                    logger.warning(f"⚠️ Cannot refresh params for page {page_num}, using cached params")
+            
+            # ✅ PHƯƠNG ÁN 3: Sequential Download với Refresh Params
+            # Download tuần tự từng file, refresh params trước mỗi file để đảm bảo ổn định
+            logger.info(f"📦 Page {page_num}: Downloading {len(page_items)} files sequentially...")
+            
+            for idx, item in enumerate(page_items):
+                file_num = idx + 1
+                logger.info(f"📄 Page {page_num}, File {file_num}/{len(page_items)}: {item['id']}")
+                
+                # ✅ Refresh params trước mỗi file để đảm bảo state đúng
+                # (Tránh trường hợp params bị outdated sau khi download file trước)
+                try:
+                    fresh_params = await self._extract_download_params(frame)
+                    if fresh_params:
+                        base_params = fresh_params
+                        # logger.debug(f"✅ Refreshed params for file {file_num}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Cannot refresh params for file {file_num}, using cached params: {e}")
+                
+                # Download file
+                try:
+                    result = await self._download_one_via_url(
+                        session_id,
+                        item["id"],
+                        item,
+                        base_params,
+                        temp_dir,
+                        frame=frame  # ✅ Truyền frame để có thể navigate khi retry
+                    )
+                    
+                    if result and not isinstance(result, Exception):
+                        successful_downloads.append(result)
+                        logger.info(f"✅ Page {page_num}, File {file_num}/{len(page_items)}: Success")
+                        
+                        # ✅ Yield progress sau mỗi file download xong
+                        if progress_callback:
+                            await progress_callback(result, successful_downloads, page_items)
+                    else:
+                        logger.warning(f"❌ Page {page_num}, File {file_num}/{len(page_items)}: Failed")
+                
+                except Exception as e:
+                    logger.error(f"❌ Page {page_num}, File {file_num}/{len(page_items)}: Error - {e}")
+                
+                # ✅ Delay nhỏ giữa mỗi file (0.1s) để:
+                # - Tránh spam server
+                # - Đảm bảo browser state ổn định
+                # - Vẫn tải đủ nhanh (50 files ~ 5 giây chỉ tính delay)
+                await asyncio.sleep(0.1)
+            
+            # Sequential download đã tự động tạo khoảng cách giữa các page
+            # Không cần delay thêm
+        
+        logger.info(f"🎉 Total downloaded: {len(successful_downloads)} / {total}")
+        return successful_downloads
+    
+    async def _batch_download(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame, session_id: str = None, page_params_map: Dict[int, Dict[str, str]] = None):
+        """
+        ✅ FIXED VERSION: Download với batching tối ưu dùng httpx
+        
+        Returns: List các item download thành công
+        """
+        if not session_id:
+            logger.warning("No session_id provided, cannot use optimized download")
+            return []
+        
+        # Filter chỉ lấy items có link (bỏ qua special tokhai)
+        download_queue_filtered = [item for item in download_queue if item.get("has_link", False)]
+        
+        if not download_queue_filtered:
+            logger.warning("No items with download links")
+            return []
+        
+        if not page_params_map:
+            logger.warning("No page_params_map provided, cannot download")
+            return []
+        
+        # Gọi download optimized
+        return await self._batch_download_optimized(
+            session_id=session_id,
+            download_queue=download_queue_filtered,
+            temp_dir=temp_dir,
+            frame=frame,
+            batch_size=3,  # Tối ưu: 3 files/batch
+            page_params_map=page_params_map  # ✅ FIX: Truyền page_params_map
+        )
+    
+    async def _batch_download_old(self, session: SessionData, download_queue: List[Dict], temp_dir: str, ssid: str, frame, session_id: str = None):
+        """
+        [DEPRECATED] Download nhiều file song song (tối ưu tốc độ)
         Limit concurrent downloads = 5 để không quá tải
         
         Returns: List các item download thành công
@@ -1610,15 +2749,15 @@ class TaxCrawlerService:
                                 
                                 # Nếu có download event, bắt nó
                                 if download_occurred and response_data:
-                                save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
+                                    save_path = os.path.join(temp_dir, file_name + ".xml" if not file_name.endswith(".xml") else file_name)
                                     with open(save_path, 'wb') as f:
                                         f.write(response_data)
-                                
-                                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                                    logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
-                                    successful_downloads.append(item)
-                                else:
-                                    logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
+                                    
+                                    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                                        logger.info(f"Downloaded special (no link) {id_tk} -> {file_name}")
+                                        successful_downloads.append(item)
+                                    else:
+                                        logger.warning(f"Download failed: File not saved or empty for special {id_tk}")
                                 else:
                                     # Fallback: thử bắt download event
                                     try:
@@ -1682,11 +2821,11 @@ class TaxCrawlerService:
                                     except Exception as e3:
                                         logger.warning(f"httpx fallback also failed for {id_tk}: {e3}")
                                     finally:
-                                if new_page:
-                                    try:
-                                        await new_page.close()
-                                    except:
-                                        pass
+                                        if new_page:
+                                            try:
+                                                await new_page.close()
+                                            except:
+                                                pass
                         else:
                             logger.warning(f"No valid session ID for special download: {id_tk}. ssid={ssid}")
                 except Exception as e:
@@ -2387,12 +3526,12 @@ class TaxCrawlerService:
             frame = None
             max_wait = 30  # Đợi tối đa 15 giây (30 * 0.5)
             for i in range(max_wait):
-            try:
-                frames = page.frames
-                for f in frames:
+                try:
+                    frames = page.frames
+                    for f in frames:
                         if 'thuedientu.gdt.gov.vn' in f.url and 'etaxnnt' in f.url:
-                        frame = f
-                        logger.info(f"Found frame for giaynoptien: {frame.url[:100]}...")
+                            frame = f
+                            logger.info(f"Found frame for giaynoptien: {frame.url[:100]}...")
                             # Kiểm tra xem frame đã load chưa
                             try:
                                 await frame.wait_for_load_state('domcontentloaded', timeout=2000)
@@ -2404,7 +3543,7 @@ class TaxCrawlerService:
                     
                     if frame:
                         break
-            except Exception as e:
+                except Exception as e:
                     logger.debug(f"Waiting for frame (attempt {i + 1}/{max_wait}): {e}")
                 
                 await asyncio.sleep(0.5)

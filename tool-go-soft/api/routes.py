@@ -1522,4 +1522,81 @@ def register_routes(app, prefix):
                 "status": "error",
                 "message": str(e)
             }), 500
+    
+    # ==================== DOWNLOAD ZIP FILE ====================
+    
+    @app.route(f'{prefix}/download/<download_id>', methods=['GET'])
+    async def download_zip(download_id):
+        """
+        Download ZIP file bằng download_id
+        
+        Query params:
+            - filename: Tên file ZIP (optional)
+        """
+        try:
+            from services.tax_crawler import TaxCrawlerService
+            from quart import Response
+            import os
+            
+            # Lấy ZIP_STORAGE_DIR từ TaxCrawlerService
+            zip_storage_dir = TaxCrawlerService.ZIP_STORAGE_DIR
+            zip_file_path = os.path.join(zip_storage_dir, f"{download_id}.zip")
+            
+            # Kiểm tra file tồn tại
+            if not os.path.exists(zip_file_path):
+                logger.warning(f"Download request for {download_id}, file not found: {zip_file_path}")
+                return jsonify({
+                    "status": "error",
+                    "error_code": "FILE_NOT_FOUND",
+                    "message": "ZIP file not found"
+                }), 404
+            
+            # Lấy filename từ query params hoặc dùng default
+            filename = request.args.get('filename', f"{download_id}.zip")
+            
+            # Đọc file và trả về
+            with open(zip_file_path, 'rb') as f:
+                zip_content = f.read()
+            
+            logger.info(f"Download request for {download_id}, sending file: {zip_file_path} as {filename}")
+            
+            # ✅ Thêm CORS headers để frontend có thể download
+            headers = {
+                'Content-Type': 'application/zip',
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Content-Length': str(len(zip_content)),
+                'Access-Control-Allow-Origin': '*',  # ✅ Cho phép tất cả origins (hoặc set cụ thể: 'https://gotax.vn')
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+            }
+            
+            return Response(
+                zip_content,
+                mimetype='application/zip',
+                headers=headers
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in download_zip: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "status": "error",
+                "message": str(e)
+            }), 500
+    
+    # ✅ Handle OPTIONS request cho CORS preflight
+    @app.route(f'{prefix}/download/<download_id>', methods=['OPTIONS'])
+    async def download_zip_options(download_id):
+        """Handle CORS preflight request"""
+        from quart import Response
+        return Response(
+            '',
+            status=200,
+            headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+            }
+        )
 

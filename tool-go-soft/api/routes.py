@@ -47,24 +47,77 @@ def check_session_exists(session_id: str) -> tuple[bool, dict]:
         - exists: True nếu session tồn tại, False nếu không
         - error_response: Dict error response nếu session không tồn tại, None nếu tồn tại
     """
-    if not session_id:
-        return False, {
-            "status": "error",
-            "error_code": "MISSING_SESSION_ID",
-            "message": "Thiếu session_id. Vui lòng đăng nhập lại."
-        }
-    
-    sm = get_session_manager()
-    session = sm.get_session(session_id)
-    
-    if not session:
+    try:
+        if not session_id:
+            return False, {
+                "status": "error",
+                "error_code": "MISSING_SESSION_ID",
+                "message": "Thiếu session_id. Vui lòng đăng nhập lại."
+            }
+        
+        sm = get_session_manager()
+        session = sm.get_session(session_id)
+        
+        if not session:
+            return False, {
+                "status": "error",
+                "error_code": "SESSION_NOT_FOUND",
+                "message": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+            }
+        
+        return True, None
+    except Exception as e:
+        logger.error(f"Error in check_session_exists: {e}", exc_info=True)
+        # Nếu có lỗi, trả về session not found để an toàn
         return False, {
             "status": "error",
             "error_code": "SESSION_NOT_FOUND",
             "message": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
         }
+
+
+async def check_session_before_crawl(session_id: str) -> tuple[bool, dict]:
+    """
+    ✅ Hàm check session chung cho tất cả các loại crawl (tờ khai, giấy nộp tiền, thông báo)
+    Kiểm tra:
+    1. Session có tồn tại không
+    2. Session có hợp lệ không (JSESSIONID)
     
-    return True, None
+    Returns:
+        (is_valid, error_response):
+        - is_valid: True nếu session hợp lệ, False nếu không
+        - error_response: Dict error response nếu session không hợp lệ, None nếu hợp lệ
+    """
+    try:
+        # Bước 1: Check session exists
+        session_exists, error_response = check_session_exists(session_id)
+        if not session_exists:
+            logger.warning(f"Session check failed (not exists): {session_id[:8]}... - {error_response.get('error_code')}")
+            return False, error_response
+        
+        # Bước 2: Check session validity (JSESSIONID)
+        sm = get_session_manager()
+        session_validity = await sm.check_session_validity(session_id)
+        if not session_validity.get("valid", False):
+            error_code = session_validity.get("error_code", "SESSION_EXPIRED")
+            error_message = session_validity.get("error", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.")
+            logger.warning(f"Session check failed (invalid): {session_id[:8]}... - {error_code}")
+            return False, {
+                "status": "error",
+                "error_code": error_code,
+                "message": error_message
+            }
+        
+        logger.debug(f"Session check passed: {session_id[:8]}...")
+        return True, None
+    except Exception as e:
+        logger.error(f"Error in check_session_before_crawl: {e}")
+        # Nếu có lỗi khi check, trả về session expired để an toàn
+        return False, {
+            "status": "error",
+            "error_code": "SESSION_EXPIRED",
+            "message": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        }
 
 
 def register_routes(app, prefix):
@@ -387,24 +440,10 @@ def register_routes(app, prefix):
             if not tokhai_type or tokhai_type.strip() == "":
                 tokhai_type = "00"
             
-            # ✅ Check session exists (nếu backend restart, session sẽ không tồn tại)
-            session_exists, error_response = check_session_exists(session_id)
-            if not session_exists:
-                # Trả về 401 (Unauthorized) thay vì 404 để frontend biết cần login lại
+            # ✅ Check session trước khi crawl (dùng hàm chung)
+            is_valid, error_response = await check_session_before_crawl(session_id)
+            if not is_valid:
                 return jsonify(error_response), 401
-            
-            # ✅ Check session validity trước khi bắt đầu crawl (giống như check trong login)
-            # Check JSESSIONID hiện tại so với JSESSIONID đã lưu
-            sm = get_session_manager()
-            session_validity = await sm.check_session_validity(session_id)
-            if not session_validity.get("valid", False):
-                error_code = session_validity.get("error_code", "SESSION_EXPIRED")
-                error_message = session_validity.get("error", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.")
-                return jsonify({
-                    "status": "error",
-                    "error_code": error_code,
-                    "message": error_message
-                }), 401
             
             # Chạy crawl trong background task và publish events vào Redis
             async def crawl_and_publish():
@@ -569,18 +608,19 @@ def register_routes(app, prefix):
     @app.route(f'{prefix}/crawl/thongbao', methods=['POST'])
     async def crawl_thongbao():
         """
-        Crawl thông báo
-        - Nếu có job_id: publish events to Redis (queue mode)
-        - Nếu không có job_id: streaming response (SSE mode - backward compatible)
+        Crawl thông báo (publish events to Redis)
         Body: {
-            "job_id": "...",  # Optional - nếu có thì dùng queue mode
+            "job_id": "...",  # Job ID để publish events
             "session_id": "...",
             "start_date": "01/01/2023",
             "end_date": "31/12/2023"
         }
+        Returns: { "status": "accepted", "job_id": "..." }
+        
+        API sẽ publish events vào Redis, worker sẽ lắng nghe từ Redis
         """
         try:
-            from quart import request, Response
+            from quart import request
             import asyncio
             from shared.redis_client import publish_progress
             
@@ -590,37 +630,20 @@ def register_routes(app, prefix):
             start_date = data.get("start_date")
             end_date = data.get("end_date")
             
-            # Validate required fields (job_id is optional)
-            if not all([session_id, start_date, end_date]):
+            # ✅ job_id là required (giống tờ khai)
+            if not all([job_id, session_id, start_date, end_date]):
                 return jsonify({
                     "status": "error",
                     "error_code": "MISSING_REQUIRED_FIELDS",
-                    "message": "Missing required fields: session_id, start_date, end_date"
+                    "message": "Missing required fields: job_id, session_id, start_date, end_date"
                 }), 400
             
-            # Check session exists
-            session_exists, error_response = check_session_exists(session_id)
-            if not session_exists:
-                return jsonify(error_response), 404
+            # ✅ Check session trước khi crawl (dùng hàm chung)
+            is_valid, error_response = await check_session_before_crawl(session_id)
+            if not is_valid:
+                return jsonify(error_response), 401
             
-            # Nếu không có job_id → dùng streaming mode (backward compatible)
-            if not job_id:
-                tc = get_tax_crawler()
-                
-                async def generate():
-                    async for event in tc.crawl_thongbao(session_id, start_date, end_date):
-                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                
-                return Response(
-                    generate(),
-                    mimetype='text/event-stream',
-                    headers={
-                        'Cache-Control': 'no-cache',
-                        'X-Accel-Buffering': 'no'
-                    }
-                )
-            
-            # Nếu có job_id → dùng queue mode (publish to Redis)
+            # Chạy crawl trong background task và publish events vào Redis
             # Chạy crawl trong background task và publish events vào Redis
             async def crawl_and_publish():
                 try:
@@ -632,29 +655,59 @@ def register_routes(app, prefix):
                     accumulated_total = 0
                     accumulated_downloaded = 0
                     
-                    async for event in tc.crawl_thongbao(session_id, start_date, end_date):
+                    async for event in tc.crawl_thongbao(session_id, start_date, end_date, job_id=job_id):
+                        # ✅ Check cancelled trước khi xử lý event tiếp theo (giống tờ khai)
+                        from shared.redis_client import get_redis_client
+                        check_redis = get_redis_client()
+                        cancelled = check_redis.get(f"job:{job_id}:cancelled")
+                        if cancelled:
+                            cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                            if cancelled == '1':
+                                logger.info(f"[API] Job {job_id} đã bị cancel, dừng crawl")
+                                check_redis.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                publish_progress(job_id, 0, "Job đã bị hủy")
+                                break
+                        
                         event_type = event.get('type', 'unknown')
+                        
+                        # ✅ Nếu event là error với JOB_CANCELLED, dừng ngay
+                        if event_type == 'error' and event.get('error_code') == 'JOB_CANCELLED':
+                            logger.info(f"[API] Job {job_id} đã bị cancel từ crawler")
+                            check_redis.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                            publish_progress(job_id, 0, "Job đã bị hủy", event)
+                            break
                         
                         if event_type == 'progress':
                             percent = event.get('percent', 0)
+                            accumulated_percent = event.get('accumulated_percent', percent)
                             message = event.get('message', 'Đang xử lý...')
-                            publish_progress(job_id, percent, message, event)
+                            logger.debug(f"📤 [ROUTES] [THONGBAO] Publish progress: {percent}% (accumulated: {accumulated_percent}%)")
+                            publish_progress(job_id, accumulated_percent if accumulated_percent is not None else percent, message, event)
                             
                         elif event_type == 'info':
                             message = event.get('message', '')
-                            publish_progress(job_id, 0, message)
+                            accumulated_percent = event.get('accumulated_percent')
+                            logger.debug(f"📤 [ROUTES] [THONGBAO] Publish info: {message}")
+                            publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, message, event)
                             
                         elif event_type == 'download_start':
                             total = event.get('accumulated_total', event.get('total', 0))
                             accumulated_total = total
-                            publish_progress(job_id, 0, f"Bắt đầu tải {total} file...", event)
+                            accumulated_percent = event.get('accumulated_percent', 0)
+                            range_index = event.get('range_index', '?')
+                            total_ranges = event.get('total_ranges', '?')
+                            date_range = event.get('date_range', '?')
+                            logger.debug(f"📤 [ROUTES] [THONGBAO] Publish download_start: Range {range_index}/{total_ranges} ({date_range}), Total: {total}")
+                            publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, f"Bắt đầu tải {total} file...", event)
                             
                         elif event_type == 'download_progress':
                             current = event.get('accumulated_downloaded', event.get('current', 0))
                             total = event.get('accumulated_total', event.get('total', 0))
                             accumulated_total = total
                             accumulated_downloaded = current
-                            percent = int((current / total) * 100) if total > 0 else 0
+                            accumulated_percent = event.get('accumulated_percent')
+                            percent = accumulated_percent if accumulated_percent is not None else (int((current / total) * 100) if total > 0 else 0)
+                            logger.debug(f"📤 [ROUTES] [THONGBAO] Publish download_progress: {current}/{total} files, Accumulated %: {accumulated_percent}%")
                             publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
                             
                         elif event_type == 'item':
@@ -748,17 +801,31 @@ def register_routes(app, prefix):
                     "message": "Missing required fields: session_id, start_date, end_date"
                 }), 400
             
-            # Check session exists
+            # ✅ Check session exists (nếu backend restart, session sẽ không tồn tại)
             session_exists, error_response = check_session_exists(session_id)
             if not session_exists:
-                return jsonify(error_response), 404
+                # Trả về 401 (Unauthorized) thay vì 404 để frontend biết cần login lại
+                return jsonify(error_response), 401
+            
+            # ✅ Check session validity trước khi bắt đầu crawl (giống như check trong login)
+            # Check JSESSIONID hiện tại so với JSESSIONID đã lưu
+            sm = get_session_manager()
+            session_validity = await sm.check_session_validity(session_id)
+            if not session_validity.get("valid", False):
+                error_code = session_validity.get("error_code", "SESSION_EXPIRED")
+                error_message = session_validity.get("error", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.")
+                return jsonify({
+                    "status": "error",
+                    "error_code": error_code,
+                    "message": error_message
+                }), 401
             
             # Nếu không có job_id → dùng streaming mode (backward compatible)
             if not job_id:
                 tc = get_tax_crawler()
                 
                 async def generate():
-                    async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date):
+                    async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date, job_id=None):
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 
                 return Response(
@@ -783,16 +850,42 @@ def register_routes(app, prefix):
                     accumulated_downloaded = 0
                     
                     async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date):
+                        # ✅ Check cancelled trước khi xử lý event tiếp theo
+                        from shared.redis_client import get_redis_client
+                        check_redis = get_redis_client()
+                        cancelled = check_redis.get(f"job:{job_id}:cancelled")
+                        if cancelled:
+                            cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                            if cancelled == '1':
+                                logger.info(f"[API] Job {job_id} đã bị cancel, dừng crawl")
+                                check_redis.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                publish_progress(job_id, 0, "Job đã bị hủy")
+                                break
+                        
                         event_type = event.get('type', 'unknown')
                         
+                        # ✅ Nếu event là error với JOB_CANCELLED, dừng ngay
+                        if event_type == 'error' and event.get('error_code') == 'JOB_CANCELLED':
+                            logger.info(f"[API] Job {job_id} đã bị cancel từ crawler")
+                            check_redis.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                            publish_progress(job_id, 0, "Job đã bị hủy", event)
+                            break
+                        
                         if event_type == 'progress':
-                            percent = event.get('percent', 0)
+                            # ✅ Forward accumulated_percent và các field khác từ event để không reset về 0%
+                            percent = event.get('accumulated_percent', event.get('percent', 0))
+                            if isinstance(percent, float):
+                                percent = int(percent)
                             message = event.get('message', 'Đang xử lý...')
                             publish_progress(job_id, percent, message, event)
                             
                         elif event_type == 'info':
                             message = event.get('message', '')
-                            publish_progress(job_id, 0, message)
+                            # ✅ Forward accumulated_percent và các field khác từ event để không reset về 0%
+                            percent = event.get('accumulated_percent', event.get('percent', 0))
+                            if isinstance(percent, float):
+                                percent = int(percent)
+                            publish_progress(job_id, percent, message, event)
                             
                         elif event_type == 'download_start':
                             total = event.get('accumulated_total', event.get('total', 0))
@@ -841,7 +934,7 @@ def register_routes(app, prefix):
                             redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
                             redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
                             publish_progress(job_id, 0, f"Lỗi: {error_msg}")
-                            
+                
                 except Exception as e:
                     error_msg = str(e)
                     logger.error(f"[API] Lỗi trong quá trình crawl giấy nộp tiền cho job {job_id}: {error_msg}")
@@ -890,19 +983,27 @@ def register_routes(app, prefix):
                     "message": f"File not found for download_id: {download_id}"
                 }), 404
             
-            # Đọc file và trả về
-            with open(zip_file_path, 'rb') as f:
-                file_content = f.read()
+            # ✅ Streaming file để tránh load toàn bộ vào memory (quan trọng cho file lớn)
+            file_size = os.path.getsize(zip_file_path)
+            logger.info(f"Sending file: {zip_file_path} as {filename} (size: {file_size} bytes)")
             
-            logger.info(f"Sending file: {zip_file_path} as {filename}")
+            async def generate():
+                """Generator để stream file theo chunk"""
+                chunk_size = 8192  # 8KB chunks
+                with open(zip_file_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
             
-            # Trả về file với Content-Disposition header
+            # Trả về streaming response
             response = Response(
-                file_content,
+                generate(),
                 mimetype='application/zip',
                 headers={
                     'Content-Disposition': f'attachment; filename="{filename}"',
-                    'Content-Length': str(len(file_content))
+                    'Content-Length': str(file_size)
                 }
             )
             return response
@@ -1086,57 +1187,6 @@ def register_routes(app, prefix):
                 "message": str(e)
             }), 500
     
-    @app.route(f'{prefix}/crawl/thongbao', methods=['POST'], endpoint='go_soft_crawl_thongbao')
-    async def crawl_thongbao():
-        """
-        Crawl thông báo (streaming response)
-        Body: {
-            "session_id": "...",
-            "start_date": "01/01/2023",
-            "end_date": "31/12/2023"
-        }
-        """
-        try:
-            from quart import request, Response
-            data = await request.get_json()
-            session_id = data.get("session_id")
-            start_date = data.get("start_date")
-            end_date = data.get("end_date")
-            
-            if not all([session_id, start_date, end_date]):
-                return jsonify({
-                    "status": "error",
-                    "error_code": "MISSING_REQUIRED_FIELDS",
-                    "message": "Missing required fields"
-                }), 400
-            
-            # Check session exists
-            session_exists, error_response = check_session_exists(session_id)
-            if not session_exists:
-                return jsonify(error_response), 404
-            
-            tc = get_tax_crawler()
-            
-            async def generate():
-                async for event in tc.crawl_thongbao(session_id, start_date, end_date):
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            
-            return Response(
-                generate(),
-                mimetype='text/event-stream',
-                headers={
-                    'Cache-Control': 'no-cache',
-                    'X-Accel-Buffering': 'no'
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"Error in crawl_thongbao: {e}")
-            return jsonify({
-                "status": "error",
-                "message": str(e)
-            }), 500
-    
     @app.route(f'{prefix}/crawl/thongbao/sync', methods=['POST'])
     async def crawl_thongbao_sync():
         """Crawl thông báo (synchronous response)"""
@@ -1203,24 +1253,69 @@ def register_routes(app, prefix):
             "end_date": "31/12/2023"
         }
         """
+        from quart import request, Response
         try:
-            from quart import request, Response
             data = await request.get_json()
+            if not data:
+                async def generate_error():
+                    yield f"data: {json.dumps({'type': 'error', 'error_code': 'INVALID_REQUEST', 'error': 'Invalid request body'}, ensure_ascii=False)}\n\n"
+                return Response(
+                    generate_error(),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
+            
             session_id = data.get("session_id")
             start_date = data.get("start_date")
             end_date = data.get("end_date")
             
             if not all([session_id, start_date, end_date]):
-                return jsonify({
-                    "status": "error",
-                    "error_code": "MISSING_REQUIRED_FIELDS",
-                    "message": "Missing required fields"
-                }), 400
+                async def generate_error():
+                    yield f"data: {json.dumps({'type': 'error', 'error_code': 'MISSING_REQUIRED_FIELDS', 'error': 'Missing required fields'}, ensure_ascii=False)}\n\n"
+                return Response(
+                    generate_error(),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
             
-            # Check session exists
-            session_exists, error_response = check_session_exists(session_id)
-            if not session_exists:
-                return jsonify(error_response), 404
+            # ✅ Check session trước khi crawl (dùng hàm chung)
+            logger.info(f"[crawl_giaynoptien] Checking session: {session_id[:8]}...")
+            try:
+                is_valid, error_response = await check_session_before_crawl(session_id)
+                if not is_valid:
+                    # Trả về error event trong SSE stream (status 200, không phải 401)
+                    error_code = error_response.get("error_code", "SESSION_EXPIRED")
+                    error_message = error_response.get("message", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.")
+                    logger.warning(f"[crawl_giaynoptien] Session invalid: {error_code} - {error_message}")
+                    async def generate_error():
+                        yield f"data: {json.dumps({'type': 'error', 'error_code': error_code, 'error': error_message}, ensure_ascii=False)}\n\n"
+                    return Response(
+                        generate_error(),
+                        mimetype='text/event-stream',
+                        headers={
+                            'Cache-Control': 'no-cache',
+                            'X-Accel-Buffering': 'no'
+                        }
+                    )
+            except Exception as check_error:
+                logger.error(f"[crawl_giaynoptien] Error checking session: {check_error}", exc_info=True)
+                # Nếu có lỗi khi check, trả về error event trong SSE stream
+                async def generate_error():
+                    yield f"data: {json.dumps({'type': 'error', 'error_code': 'SESSION_EXPIRED', 'error': 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'}, ensure_ascii=False)}\n\n"
+                return Response(
+                    generate_error(),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
             
             tc = get_tax_crawler()
             
@@ -1238,11 +1333,25 @@ def register_routes(app, prefix):
             )
             
         except Exception as e:
-            logger.error(f"Error in crawl_giay_nop_thue: {e}")
-            return jsonify({
-                "status": "error",
-                "message": str(e)
-            }), 500
+            logger.error(f"Error in crawl_giay_nop_thue: {e}", exc_info=True)
+            # ✅ Trả về error event trong SSE stream thay vì HTTP error
+            error_message = str(e)
+            # Check xem có phải là session error không
+            if "session" in error_message.lower() or "Session" in error_message:
+                error_code = "SESSION_EXPIRED"
+            else:
+                error_code = "CRAWL_ERROR"
+            
+            async def generate_error():
+                yield f"data: {json.dumps({'type': 'error', 'error_code': error_code, 'error': error_message}, ensure_ascii=False)}\n\n"
+            return Response(
+                generate_error(),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no'
+                }
+            )
     
     @app.route(f'{prefix}/crawl/giaynoptien/sync', methods=['POST'])
     async def crawl_giay_nop_tien_sync():
@@ -1261,10 +1370,10 @@ def register_routes(app, prefix):
                     "message": "Missing required fields"
                 }), 400
             
-            # Check session exists
-            session_exists, error_response = check_session_exists(session_id)
-            if not session_exists:
-                return jsonify(error_response), 404
+            # ✅ Check session trước khi crawl (dùng hàm chung)
+            is_valid, error_response = await check_session_before_crawl(session_id)
+            if not is_valid:
+                return jsonify(error_response), 401
             
             tc = get_tax_crawler()
             
@@ -1525,7 +1634,7 @@ def register_routes(app, prefix):
     
     # ==================== DOWNLOAD ZIP FILE ====================
     
-    @app.route(f'{prefix}/download/<download_id>', methods=['GET'])
+    @app.route(f'{prefix}/download/<download_id>', methods=['GET'], endpoint='go_soft_download_zip')
     async def download_zip(download_id):
         """
         Download ZIP file bằng download_id

@@ -99,6 +99,24 @@ async def process_go_soft_job(job_data):
             }
             logger.info(f"[Job {job_id}] Bắt đầu crawl giấy nộp tiền từ {start_date} đến {end_date}")
             publish_progress(job_id, 0, "Bắt đầu crawl giấy nộp tiền...")
+        elif action == 'crawl_batch':
+            # ✅ Batch crawl - gọi API /crawl/batch/queue
+            endpoint = '/crawl/batch/queue'
+            crawl_types = params.get('crawl_types', [])
+            tokhai_type = params.get('tokhai_type', '00')
+            if not tokhai_type or tokhai_type.strip() == "":
+                tokhai_type = "00"
+            request_data = {
+                'job_id': job_id,
+                'session_id': session_id,
+                'start_date': start_date,
+                'end_date': end_date,
+                'crawl_types': crawl_types,
+                'tokhai_type': tokhai_type
+            }
+            crawl_types_str = ', '.join(crawl_types)
+            logger.info(f"[Job {job_id}] Bắt đầu batch crawl ({crawl_types_str}) từ {start_date} đến {end_date}")
+            publish_progress(job_id, 0, f"Bắt đầu crawl {len(crawl_types)} loại...")
         else:
             error_msg = f"Action không hợp lệ: {action}"
             logger.error(f"[Job {job_id}] {error_msg}")
@@ -193,11 +211,29 @@ async def process_go_soft_job(job_data):
                     if result_json:
                         try:
                             result_data = json.loads(result_json.decode('utf-8') if isinstance(result_json, bytes) else result_json)
-                            total_count = result_data.get('total', 0)
-                            download_id = result_data.get('download_id')
-                            zip_filename = result_data.get('zip_filename')
-                            job_completed = True
-                            logger.info(f"[Job {job_id}] Job hoàn thành: {total_count} file, download_id: {download_id}")
+                            
+                            # ✅ Kiểm tra nếu là batch crawl (có batch_results)
+                            if 'batch_results' in result_data:
+                                # Batch crawl result
+                                batch_results = result_data.get('batch_results', {})
+                                total_files = result_data.get('total_files', 0)
+                                
+                                # Log thông tin từng loại crawl trong batch
+                                for crawl_type, batch_result in batch_results.items():
+                                    type_total = batch_result.get('total', 0)
+                                    type_download_id = batch_result.get('download_id')
+                                    type_zip_filename = batch_result.get('zip_filename')
+                                    logger.info(f"[Job {job_id}] Batch crawl - {crawl_type}: {type_total} file, download_id: {type_download_id}")
+                                
+                                job_completed = True
+                                logger.info(f"[Job {job_id}] Batch crawl hoàn thành: {total_files} file tổng cộng")
+                            else:
+                                # Single crawl result
+                                total_count = result_data.get('total', 0)
+                                download_id = result_data.get('download_id')
+                                zip_filename = result_data.get('zip_filename')
+                                job_completed = True
+                                logger.info(f"[Job {job_id}] Job hoàn thành: {total_count} file, download_id: {download_id}")
                             break
                         except Exception as e:
                             logger.warning(f"[Job {job_id}] Lỗi khi parse result từ Redis: {e}")

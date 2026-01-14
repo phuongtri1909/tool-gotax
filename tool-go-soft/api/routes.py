@@ -9,6 +9,7 @@ import sys
 import json
 import logging
 import base64
+import asyncio
 from functools import wraps
 
 # Thêm parent directory vào path
@@ -1562,7 +1563,409 @@ def register_routes(app, prefix):
                 "message": str(e)
             }), 500
     
-    # ==================== BATCH CRAWL (Parallel) ====================
+    # ==================== BATCH CRAWL (Queue Mode - Redis Polling) ====================
+    
+    @app.route(f'{prefix}/crawl/batch/queue', methods=['POST'])
+    async def batch_crawl_queue():
+        """
+        Crawl nhiều loại dữ liệu đồng thời (publish events to Redis)
+        Body: {
+            "job_id": "...",  # Job ID để publish events
+            "session_id": "...",
+            "start_date": "01/01/2023",
+            "end_date": "31/12/2023",
+            "crawl_types": ["tokhai", "thongbao", "giaynoptien"],
+            "tokhai_type": "01/GTGT" hoặc "00" (Tất cả) hoặc null
+        }
+        Returns: { "status": "accepted", "job_id": "..." }
+        
+        API sẽ publish events vào Redis, worker sẽ lắng nghe từ Redis
+        """
+        try:
+            from quart import request
+            import asyncio
+            from shared.redis_client import publish_progress, get_redis_client
+            
+            data = await request.get_json()
+            job_id = data.get("job_id")
+            session_id = data.get("session_id")
+            tokhai_type = data.get("tokhai_type", "00")
+            start_date = data.get("start_date")
+            end_date = data.get("end_date")
+            crawl_types = data.get("crawl_types", [])
+            
+            if not all([job_id, session_id, start_date, end_date, crawl_types]):
+                return jsonify({
+                    "status": "error",
+                    "error_code": "MISSING_REQUIRED_FIELDS",
+                    "message": "Missing required fields: job_id, session_id, start_date, end_date, crawl_types"
+                }), 400
+            
+            valid_types = ["tokhai", "thongbao", "giaynoptien"]
+            crawl_types = [t for t in crawl_types if t in valid_types]
+            
+            if not crawl_types:
+                return jsonify({
+                    "status": "error",
+                    "error_code": "INVALID_CRAWL_TYPES",
+                    "message": "Không có loại crawl hợp lệ. Chọn từ: tokhai, thongbao, giaynoptien"
+                }), 400
+            
+            is_valid, error_response = await check_session_before_crawl(session_id)
+            if not is_valid:
+                return jsonify(error_response), 401
+            
+            async def crawl_and_publish():
+                try:
+                    redis_client = get_redis_client()
+                    tc = get_tax_crawler()
+                    batch_results = {}
+                    total_types = len(crawl_types)
+                    
+                    publish_progress(job_id, 0, f"Bắt đầu crawl {total_types} loại...", {
+                        'type': 'batch_start',
+                        'total_types': total_types
+                    })
+                    
+                    for type_index, crawl_type in enumerate(crawl_types, 1):
+                        type_label = {
+                            'tokhai': 'Tờ khai',
+                            'thongbao': 'Thông báo',
+                            'giaynoptien': 'Giấy nộp tiền'
+                        }.get(crawl_type, crawl_type)
+                        
+                        cancelled = redis_client.get(f"job:{job_id}:cancelled")
+                        if cancelled:
+                            cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                            if cancelled == '1':
+                                logger.info(f"[API] Job {job_id} đã bị cancel trong batch crawl")
+                                redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                publish_progress(job_id, 0, "Job đã bị hủy")
+                                return
+                        
+                        # Publish batch_progress event
+                        publish_progress(job_id, int((type_index - 1) / total_types * 100), f"Đang crawl {type_label} ({type_index}/{total_types})...", {
+                            'type': 'batch_progress',
+                            'current_type': crawl_type,
+                            'type_index': type_index,
+                            'total_types': total_types
+                        })
+                        
+                        try:
+                            # Track accumulated values cho từng loại crawl
+                            type_accumulated_total = 0
+                            type_accumulated_downloaded = 0
+                            
+                            # gọi method crawl tương ứng cho từng loại
+                            if crawl_type == 'tokhai':
+                                async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date, job_id=job_id):
+                                    # Check cancelled
+                                    cancelled = redis_client.get(f"job:{job_id}:cancelled")
+                                    if cancelled:
+                                        cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                                        if cancelled == '1':
+                                            logger.info(f"[API] Job {job_id} đã bị cancel trong crawl {crawl_type}")
+                                            redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                            publish_progress(job_id, 0, "Job đã bị hủy")
+                                            return
+                                    
+                                    event_type = event.get('type', 'unknown')
+                                    
+                                    if event_type == 'error' and event.get('error_code') == 'JOB_CANCELLED':
+                                        logger.info(f"[API] Job {job_id} đã bị cancel từ crawler {crawl_type}")
+                                        redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                        publish_progress(job_id, 0, "Job đã bị hủy", event)
+                                        return
+                                    
+                                    # Forward events với crawl_type (giống single crawl)
+                                    if event_type == 'progress':
+                                        percent = event.get('accumulated_percent', event.get('percent', 0))
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        percent = accumulated_percent if accumulated_percent is not None else percent
+                                        message = event.get('message', 'Đang xử lý...')
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else percent, message, event)
+                                        
+                                    elif event_type == 'info':
+                                        message = event.get('message', '')
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, message, event)
+                                        
+                                    elif event_type == 'download_start':
+                                        total = event.get('accumulated_total', event.get('total', 0))
+                                        type_accumulated_total = total
+                                        accumulated_percent = event.get('accumulated_percent', 0)
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, f"Bắt đầu tải {total} file...", event)
+                                        
+                                    elif event_type == 'download_progress':
+                                        current = event.get('accumulated_downloaded', event.get('current', 0))
+                                        total = event.get('accumulated_total', event.get('total', 0))
+                                        type_accumulated_total = total
+                                        type_accumulated_downloaded = current
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        percent = accumulated_percent if accumulated_percent is not None else (int((current / total) * 100) if total > 0 else 0)
+                                        event['accumulated_percent'] = percent
+                                        event['accumulated_total'] = type_accumulated_total
+                                        event['accumulated_downloaded'] = type_accumulated_downloaded
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                                        
+                                    elif event_type == 'item':
+                                        # BỎ: Không lưu item vào results array
+                                        pass
+                                        
+                                    elif event_type == 'complete':
+                                        total_from_event = event.get('total', 0)
+                                        type_download_id = event.get('download_id')
+                                        type_zip_filename = event.get('zip_filename')
+                                        
+                                        if type_accumulated_total > 0:
+                                            type_total = type_accumulated_total
+                                        else:
+                                            type_total = total_from_event
+                                        
+                                        # Chỉ lưu metadata, KHÔNG lưu results array
+                                        batch_results[crawl_type] = {
+                                            'total': type_total,
+                                            'download_id': type_download_id,
+                                            'zip_filename': type_zip_filename
+                                        }
+                                        
+                                        publish_progress(job_id, int(type_index / total_types * 100), f"Hoàn thành {type_label} ({type_index}/{total_types})", {
+                                            'type': 'type_complete',
+                                            'crawl_type': crawl_type,
+                                            'result': batch_results[crawl_type]
+                                        })
+                                        
+                                    elif event_type == 'error':
+                                        error_msg = event.get('error', 'Lỗi không xác định')
+                                        event['crawl_type'] = crawl_type
+                                        logger.error(f"[API] Job {job_id} error in {crawl_type}: {error_msg}")
+                                        publish_progress(job_id, 0, f"Lỗi: {error_msg}", event)
+                                        
+                            elif crawl_type == 'thongbao':
+                                # Tương tự như tokhai
+                                type_accumulated_total = 0
+                                type_accumulated_downloaded = 0
+                                
+                                async for event in tc.crawl_thongbao(session_id, start_date, end_date, job_id=job_id):
+                                    cancelled = redis_client.get(f"job:{job_id}:cancelled")
+                                    if cancelled:
+                                        cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                                        if cancelled == '1':
+                                            logger.info(f"[API] Job {job_id} đã bị cancel trong crawl {crawl_type}")
+                                            redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                            publish_progress(job_id, 0, "Job đã bị hủy")
+                                            return
+                                    
+                                    event_type = event.get('type', 'unknown')
+                                    
+                                    if event_type == 'error' and event.get('error_code') == 'JOB_CANCELLED':
+                                        logger.info(f"[API] Job {job_id} đã bị cancel từ crawler {crawl_type}")
+                                        redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                        publish_progress(job_id, 0, "Job đã bị hủy", event)
+                                        return
+                                    
+                                    if event_type == 'progress':
+                                        percent = event.get('accumulated_percent', event.get('percent', 0))
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        percent = accumulated_percent if accumulated_percent is not None else percent
+                                        message = event.get('message', 'Đang xử lý...')
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else percent, message, event)
+                                        
+                                    elif event_type == 'info':
+                                        message = event.get('message', '')
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, message, event)
+                                        
+                                    elif event_type == 'download_start':
+                                        total = event.get('accumulated_total', event.get('total', 0))
+                                        type_accumulated_total = total
+                                        accumulated_percent = event.get('accumulated_percent', 0)
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, f"Bắt đầu tải {total} file...", event)
+                                        
+                                    elif event_type == 'download_progress':
+                                        current = event.get('accumulated_downloaded', event.get('current', 0))
+                                        total = event.get('accumulated_total', event.get('total', 0))
+                                        type_accumulated_total = total
+                                        type_accumulated_downloaded = current
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        percent = accumulated_percent if accumulated_percent is not None else (int((current / total) * 100) if total > 0 else 0)
+                                        event['accumulated_percent'] = percent
+                                        event['accumulated_total'] = type_accumulated_total
+                                        event['accumulated_downloaded'] = type_accumulated_downloaded
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                                        
+                                    elif event_type == 'item':
+                                        pass
+                                        
+                                    elif event_type == 'complete':
+                                        total_from_event = event.get('total', 0)
+                                        type_download_id = event.get('download_id')
+                                        type_zip_filename = event.get('zip_filename')
+                                        
+                                        if type_accumulated_total > 0:
+                                            type_total = type_accumulated_total
+                                        else:
+                                            type_total = total_from_event
+                                        
+                                        batch_results[crawl_type] = {
+                                            'total': type_total,
+                                            'download_id': type_download_id,
+                                            'zip_filename': type_zip_filename
+                                        }
+                                        
+                                        publish_progress(job_id, int(type_index / total_types * 100), f"Hoàn thành {type_label} ({type_index}/{total_types})", {
+                                            'type': 'type_complete',
+                                            'crawl_type': crawl_type,
+                                            'result': batch_results[crawl_type]
+                                        })
+                                        
+                                    elif event_type == 'error':
+                                        error_msg = event.get('error', 'Lỗi không xác định')
+                                        event['crawl_type'] = crawl_type
+                                        logger.error(f"[API] Job {job_id} error in {crawl_type}: {error_msg}")
+                                        publish_progress(job_id, 0, f"Lỗi: {error_msg}", event)
+                                        
+                            elif crawl_type == 'giaynoptien':
+                                # ✅ Tương tự như tokhai
+                                type_accumulated_total = 0
+                                type_accumulated_downloaded = 0
+                                
+                                async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date, job_id=job_id):
+                                    cancelled = redis_client.get(f"job:{job_id}:cancelled")
+                                    if cancelled:
+                                        cancelled = cancelled.decode('utf-8') if isinstance(cancelled, bytes) else str(cancelled).strip()
+                                        if cancelled == '1':
+                                            logger.info(f"[API] Job {job_id} đã bị cancel trong crawl {crawl_type}")
+                                            redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                            publish_progress(job_id, 0, "Job đã bị hủy")
+                                            return
+                                    
+                                    event_type = event.get('type', 'unknown')
+                                    
+                                    if event_type == 'error' and event.get('error_code') == 'JOB_CANCELLED':
+                                        logger.info(f"[API] Job {job_id} đã bị cancel từ crawler {crawl_type}")
+                                        redis_client.set(f"job:{job_id}:status", "cancelled".encode('utf-8'))
+                                        publish_progress(job_id, 0, "Job đã bị hủy", event)
+                                        return
+                                    
+                                    if event_type == 'progress':
+                                        percent = event.get('accumulated_percent', event.get('percent', 0))
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        percent = accumulated_percent if accumulated_percent is not None else percent
+                                        message = event.get('message', 'Đang xử lý...')
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else percent, message, event)
+                                        
+                                    elif event_type == 'info':
+                                        message = event.get('message', '')
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, message, event)
+                                        
+                                    elif event_type == 'download_start':
+                                        total = event.get('accumulated_total', event.get('total', 0))
+                                        type_accumulated_total = total
+                                        accumulated_percent = event.get('accumulated_percent', 0)
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, accumulated_percent if accumulated_percent is not None else 0, f"Bắt đầu tải {total} file...", event)
+                                        
+                                    elif event_type == 'download_progress':
+                                        current = event.get('accumulated_downloaded', event.get('current', 0))
+                                        total = event.get('accumulated_total', event.get('total', 0))
+                                        type_accumulated_total = total
+                                        type_accumulated_downloaded = current
+                                        accumulated_percent = event.get('accumulated_percent')
+                                        percent = accumulated_percent if accumulated_percent is not None else (int((current / total) * 100) if total > 0 else 0)
+                                        event['accumulated_percent'] = percent
+                                        event['accumulated_total'] = type_accumulated_total
+                                        event['accumulated_downloaded'] = type_accumulated_downloaded
+                                        event['crawl_type'] = crawl_type
+                                        publish_progress(job_id, percent, f"Đã tải {current}/{total} file", event)
+                                        
+                                    elif event_type == 'item':
+                                        pass
+                                        
+                                    elif event_type == 'complete':
+                                        total_from_event = event.get('total', 0)
+                                        type_download_id = event.get('download_id')
+                                        type_zip_filename = event.get('zip_filename')
+                                        
+                                        if type_accumulated_total > 0:
+                                            type_total = type_accumulated_total
+                                        else:
+                                            type_total = total_from_event
+                                        
+                                        batch_results[crawl_type] = {
+                                            'total': type_total,
+                                            'download_id': type_download_id,
+                                            'zip_filename': type_zip_filename
+                                        }
+                                        
+                                        publish_progress(job_id, int(type_index / total_types * 100), f"Hoàn thành {type_label} ({type_index}/{total_types})", {
+                                            'type': 'type_complete',
+                                            'crawl_type': crawl_type,
+                                            'result': batch_results[crawl_type]
+                                        })
+                                        
+                                    elif event_type == 'error':
+                                        error_msg = event.get('error', 'Lỗi không xác định')
+                                        event['crawl_type'] = crawl_type
+                                        logger.error(f"[API] Job {job_id} error in {crawl_type}: {error_msg}")
+                                        publish_progress(job_id, 0, f"Lỗi: {error_msg}", event)
+                                        
+                        except Exception as e:
+                            logger.error(f"Error crawling {crawl_type} in batch: {e}")
+                            publish_progress(job_id, 0, f"Lỗi khi crawl {type_label}: {str(e)}", {
+                                'type': 'type_error',
+                                'crawl_type': crawl_type,
+                                'error': str(e)
+                            })
+                    
+                    # Publish batch_complete event
+                    result_data = {
+                        'batch_results': batch_results,
+                        'total_files': sum(r.get('total', 0) for r in batch_results.values())
+                    }
+                    redis_client.set(f"job:{job_id}:result", json.dumps(result_data).encode('utf-8'))
+                    redis_client.set(f"job:{job_id}:status", "completed".encode('utf-8'))
+                    
+                    publish_progress(job_id, 100, "Hoàn thành batch crawl", {
+                        'type': 'batch_complete',
+                        'batch_results': batch_results
+                    })
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"[API] Lỗi trong quá trình batch crawl cho job {job_id}: {error_msg}")
+                    redis_client = get_redis_client()
+                    redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
+                    redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
+                    publish_progress(job_id, 0, f"Lỗi: {error_msg}")
+            
+            asyncio.create_task(crawl_and_publish())
+            
+            return jsonify({
+                "status": "accepted",
+                "job_id": job_id,
+                "message": "Batch crawl đã được bắt đầu, events sẽ được publish vào Redis"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in batch_crawl_queue: {e}")
+            return jsonify({
+                "status": "error",
+                "message": str(e)
+            }), 500
+    
+    # ==================== BATCH CRAWL (SSE Streaming - Legacy) ====================
     
     @app.route(f'{prefix}/crawl/batch', methods=['POST'])
     async def batch_crawl():
@@ -1613,8 +2016,51 @@ def register_routes(app, prefix):
             tc = get_tax_crawler()
             
             async def generate():
-                async for event in tc.crawl_batch(session_id, start_date, end_date, crawl_types, tokhai_type):
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                # ✅ Batch crawl: chạy từng loại tuần tự và forward events
+                total_types = len(crawl_types)
+                
+                # Emit batch_start event
+                yield f"data: {json.dumps({'type': 'batch_start', 'total_types': total_types}, ensure_ascii=False)}\n\n"
+                
+                batch_results = {}
+                
+                for type_index, crawl_type in enumerate(crawl_types, 1):
+                    type_label = {
+                        'tokhai': 'Tờ khai',
+                        'thongbao': 'Thông báo',
+                        'giaynoptien': 'Giấy nộp tiền'
+                    }.get(crawl_type, crawl_type)
+                    
+                    # Emit batch_progress event
+                    yield f"data: {json.dumps({'type': 'batch_progress', 'current_type': crawl_type, 'type_index': type_index, 'total_types': total_types}, ensure_ascii=False)}\n\n"
+                    
+                    try:
+                        # ✅ Gọi method crawl tương ứng cho từng loại
+                        if crawl_type == 'tokhai':
+                            async for event in tc.crawl_tokhai(session_id, tokhai_type, start_date, end_date, job_id=None):
+                                # Forward event với thêm crawl_type
+                                event['crawl_type'] = crawl_type
+                                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                                
+                        elif crawl_type == 'thongbao':
+                            async for event in tc.crawl_thongbao(session_id, start_date, end_date, job_id=None):
+                                event['crawl_type'] = crawl_type
+                                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                                
+                        elif crawl_type == 'giaynoptien':
+                            async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date, job_id=None):
+                                event['crawl_type'] = crawl_type
+                                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                                
+                        # Emit type_complete event
+                        yield f"data: {json.dumps({'type': 'type_complete', 'crawl_type': crawl_type, 'result': batch_results.get(crawl_type, {})}, ensure_ascii=False)}\n\n"
+                        
+                    except Exception as e:
+                        logger.error(f"Error crawling {crawl_type}: {e}")
+                        yield f"data: {json.dumps({'type': 'type_error', 'crawl_type': crawl_type, 'error': str(e)}, ensure_ascii=False)}\n\n"
+                
+                # Emit batch_complete event
+                yield f"data: {json.dumps({'type': 'batch_complete', 'batch_results': batch_results}, ensure_ascii=False)}\n\n"
             
             return Response(
                 generate(),
@@ -1663,24 +2109,40 @@ def register_routes(app, prefix):
             # Lấy filename từ query params hoặc dùng default
             filename = request.args.get('filename', f"{download_id}.zip")
             
-            # Đọc file và trả về
-            with open(zip_file_path, 'rb') as f:
-                zip_content = f.read()
+            # ✅ Lấy file size để set Content-Length
+            file_size = os.path.getsize(zip_file_path)
             
-            logger.info(f"Download request for {download_id}, sending file: {zip_file_path} as {filename}")
+            logger.info(f"Download request for {download_id}, sending file: {zip_file_path} as {filename} (size: {file_size} bytes)")
+            
+            # ✅ Stream file thay vì đọc toàn bộ vào memory (tránh lỗi "transfer closed with outstanding read data remaining")
+            async def generate_file():
+                """Stream file in chunks để tránh memory issue và connection timeout"""
+                chunk_size = 64 * 1024  # ✅ Tăng lên 64KB chunks để giảm số lần I/O
+                try:
+                    with open(zip_file_path, 'rb') as f:
+                        while True:
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
+                            # ✅ Thêm small delay để tránh overwhelm network
+                            await asyncio.sleep(0.001)  # 1ms delay giữa các chunks
+                except Exception as e:
+                    logger.error(f"Error streaming file {download_id}: {e}")
+                    raise
             
             # ✅ Thêm CORS headers để frontend có thể download
             headers = {
                 'Content-Type': 'application/zip',
                 'Content-Disposition': f'attachment; filename="{filename}"',
-                'Content-Length': str(len(zip_content)),
+                'Content-Length': str(file_size),  # ✅ Set Content-Length để client biết kích thước file
                 'Access-Control-Allow-Origin': '*',  # ✅ Cho phép tất cả origins (hoặc set cụ thể: 'https://gotax.vn')
                 'Access-Control-Allow-Methods': 'GET, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type',
             }
             
             return Response(
-                zip_content,
+                generate_file(),
                 mimetype='application/zip',
                 headers=headers
             )

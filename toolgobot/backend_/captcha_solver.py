@@ -13,7 +13,8 @@ class CaptchaSolver:
         self.TARGET_HEIGHT = 24
         self.TARGET_WIDTH = 72
         self.CHAR_LIST = list("2345678abcdefghklmnprtwxy")
-        self.MODEL_PATH = ".\\toolgobot\\model.keras"
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        self.MODEL_PATH = os.path.join(BASE_DIR, "..", "model.keras")
         self.model = load_model(
             self.MODEL_PATH,
             compile=False,

@@ -1,7 +1,7 @@
-PyQt5
-PyQt5-Qt5
-PyQt5-sip
-PyQt5Designer
+# PyQt5
+# PyQt5-Qt5
+# PyQt5-sip
+# PyQt5Designer
 requests
 selenium
 openpyxl

@@ -55,17 +55,17 @@ def check_session_exists(session_id: str) -> tuple[bool, dict]:
                 "error_code": "MISSING_SESSION_ID",
                 "message": "Thiếu session_id. Vui lòng đăng nhập lại."
             }
-        
+
         sm = get_session_manager()
         session = sm.get_session(session_id)
-        
+
         if not session:
             return False, {
                 "status": "error",
                 "error_code": "SESSION_NOT_FOUND",
                 "message": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
             }
-        
+
         return True, None
     except Exception as e:
         logger.error(f"Error in check_session_exists: {e}", exc_info=True)
@@ -824,11 +824,11 @@ def register_routes(app, prefix):
             # Nếu không có job_id → dùng streaming mode (backward compatible)
             if not job_id:
                 tc = get_tax_crawler()
-                
+
                 async def generate():
                     async for event in tc.crawl_giay_nop_tien(session_id, start_date, end_date, job_id=None):
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                
+
                 return Response(
                     generate(),
                     mimetype='text/event-stream',
@@ -837,7 +837,7 @@ def register_routes(app, prefix):
                         'X-Accel-Buffering': 'no'
                     }
                 )
-            
+
             # Nếu có job_id → dùng queue mode (publish to Redis)
             # Chạy crawl trong background task và publish events vào Redis
             async def crawl_and_publish():
@@ -935,7 +935,7 @@ def register_routes(app, prefix):
                             redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
                             redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
                             publish_progress(job_id, 0, f"Lỗi: {error_msg}")
-                
+
                 except Exception as e:
                     error_msg = str(e)
                     logger.error(f"[API] Lỗi trong quá trình crawl giấy nộp tiền cho job {job_id}: {error_msg}")
@@ -944,7 +944,7 @@ def register_routes(app, prefix):
                     redis_client.set(f"job:{job_id}:status", "failed".encode('utf-8'))
                     redis_client.set(f"job:{job_id}:error", error_msg.encode('utf-8'))
                     publish_progress(job_id, 0, f"Lỗi: {error_msg}")
-            
+
             asyncio.create_task(crawl_and_publish())
             
             return jsonify({
@@ -2041,7 +2041,6 @@ def register_routes(app, prefix):
                                 # Forward event với thêm crawl_type
                                 event['crawl_type'] = crawl_type
                                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                                
                         elif crawl_type == 'thongbao':
                             async for event in tc.crawl_thongbao(session_id, start_date, end_date, job_id=None):
                                 event['crawl_type'] = crawl_type

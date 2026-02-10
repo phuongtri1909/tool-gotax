@@ -2,7 +2,7 @@
 API Server chung cho tất cả tools
 Đã migrate sang Quart (async) để support Playwright + httpx
 
-Tất cả tools sẽ được gọi qua: /api/go-quick/..., /api/go-soft/...
+Tất cả tools sẽ được gọi qua: /api/go-quick/..., /api/go-soft/..., /api/go-invoice/..., /api/go-bot/...
 
 Run với:
   python api_server.py  (dev mode)
@@ -16,6 +16,14 @@ import signal
 # Quart = async Flask (API tương tự 99%)
 from quart import Quart, jsonify, request
 from quart_cors import cors
+
+# ✅ Import ProxyManager
+try:
+    from proxy_manager import get_proxy_manager
+    PROXY_MANAGER_AVAILABLE = True
+except ImportError:
+    PROXY_MANAGER_AVAILABLE = False
+    print("⚠️  ProxyManager không khả dụng (file proxy_manager.py không tồn tại)")
 
 # Thử load từ .env file (tùy chọn)
 try:
@@ -34,6 +42,52 @@ app.config['DEBUG'] = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # 🔐 API Key Authentication
 API_KEY = os.environ.get('API_KEY', None)
+
+
+@app.before_request
+async def inject_proxy_into_request():
+    """
+    ✅ Trước mỗi request, lấy proxy tiếp theo từ proxy_manager
+    và lưu vào request context để các tool có thể sử dụng
+    """
+    if not PROXY_MANAGER_AVAILABLE:
+        return None
+    
+    # Bỏ qua health check và proxy endpoints
+    if request.path in ['/api/health', '/api/proxy/info', '/api/proxy/reload', '/api/proxy/reset']:
+        return None
+    
+    try:
+        # Lấy proxy tiếp theo (round-robin)
+        proxy_manager = get_proxy_manager()
+        proxy_url = proxy_manager.get_next_proxy()
+        
+        if proxy_url:
+            # Lưu proxy vào request context (các tool có thể lấy bằng request.proxy)
+            # Note: Quart không có request context như Flask, dùng g để lưu
+            from quart import g
+            g.proxy = proxy_url
+            
+            # Cũng thử inject vào JSON body nếu có thể
+            if request.content_type and 'application/json' in request.content_type:
+                try:
+                    # Đọc body hiện tại
+                    body = await request.get_data()
+                    if body:
+                        import json
+                        data = json.loads(body.decode('utf-8'))
+                        if isinstance(data, dict):
+                            data['proxy'] = proxy_url
+                            # Lưu lại vào g để tool có thể dùng
+                            g.request_data = data
+                except Exception:
+                    # Nếu không parse được JSON, bỏ qua
+                    pass
+    except Exception as e:
+        # Nếu có lỗi với proxy manager, bỏ qua (không ảnh hưởng request)
+        pass
+    
+    return None
 
 
 @app.before_request
@@ -71,6 +125,18 @@ TOOLS = {
         'name': 'Tax Crawler API (Playwright + httpx)',
         'async': True
     },
+    'go-invoice': {
+        'path': 'tool-go-invoice',
+        'module': 'tool_go_invoice',
+        'name': 'Invoice Backend API',
+        'async': False
+    },
+    'go-bot': {
+        'path': 'toolgobot',
+        'module': 'tool_go_bot',
+        'name': 'Go Bot API',
+        'async': False
+    },
 }
 
 
@@ -97,10 +163,9 @@ def register_tool_routes(tool_name, tool_config):
                 if hasattr(module, 'register_routes'):
                     module.register_routes(app, f'/api/{tool_name}')
                     async_tag = " (async)" if tool_config.get('async') else ""
-                    print(f"✅ Đã đăng ký routes cho tool: {tool_name}{async_tag}")
                     return True
                 else:
-                    print(f"⚠️  Module {tool_name} không có function register_routes")
+                    print("⚠️ Module %s không có register_routes" % tool_name)
             else:
                 print(f"⚠️  Không thể load spec từ {api_routes_path}")
         else:
@@ -117,10 +182,11 @@ def register_tool_routes(tool_name, tool_config):
 
 
 # Đăng ký routes cho tất cả tools
-print("🚀 Đang khởi tạo API Server (Async mode)...")
-print("📦 Tech stack: Quart + Playwright + httpx")
+registered = []
 for tool_name, tool_config in TOOLS.items():
-    register_tool_routes(tool_name, tool_config)
+    if register_tool_routes(tool_name, tool_config):
+        registered.append(tool_name)
+print("🚀 API Server (Quart) | Routes: %s" % ", ".join(registered))
 
 
 @app.route('/api/health', methods=['GET'])
@@ -134,13 +200,110 @@ async def api_health_check():
             'async': tool_config.get('async', False)
         }
     
-    return jsonify({
+    # Proxy info (nếu có)
+    proxy_info = None
+    if PROXY_MANAGER_AVAILABLE:
+        try:
+            proxy_manager = get_proxy_manager()
+            proxy_info = {
+                'total_proxies': proxy_manager.get_proxy_count(),
+                'current_index': proxy_manager.get_current_index(),
+                'proxies': proxy_manager.get_all_proxies()
+            }
+        except Exception:
+            pass
+    
+    response_data = {
         "status": "success",
         "message": "API Server is running (Async mode)",
         "tools": tools_status,
         "version": "2.0",
         "engine": "Quart + Playwright + httpx"
-    })
+    }
+    
+    if proxy_info:
+        response_data["proxy_info"] = proxy_info
+    
+    return jsonify(response_data)
+
+
+@app.route('/api/proxy/info', methods=['GET'])
+async def get_proxy_info():
+    """Xem thông tin proxy manager"""
+    if not PROXY_MANAGER_AVAILABLE:
+        return jsonify({
+            "status": "error",
+            "message": "ProxyManager không khả dụng"
+        }), 503
+    
+    try:
+        proxy_manager = get_proxy_manager()
+        return jsonify({
+            "status": "success",
+            "data": {
+                "total_proxies": proxy_manager.get_proxy_count(),
+                "current_index": proxy_manager.get_current_index(),
+                "proxies": proxy_manager.get_all_proxies()
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/proxy/reload', methods=['POST'])
+async def reload_proxy_list():
+    """Tải lại danh sách proxy từ file (sau khi update proxylist.txt)"""
+    if not PROXY_MANAGER_AVAILABLE:
+        return jsonify({
+            "status": "error",
+            "message": "ProxyManager không khả dụng"
+        }), 503
+    
+    try:
+        proxy_manager = get_proxy_manager()
+        proxy_manager.reload_proxies()
+        return jsonify({
+            "status": "success",
+            "message": "Proxy list reloaded",
+            "data": {
+                "total_proxies": proxy_manager.get_proxy_count(),
+                "proxies": proxy_manager.get_all_proxies()
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/proxy/reset', methods=['POST'])
+async def reset_proxy_index():
+    """Reset proxy index về 0 (restart round-robin)"""
+    if not PROXY_MANAGER_AVAILABLE:
+        return jsonify({
+            "status": "error",
+            "message": "ProxyManager không khả dụng"
+        }), 503
+    
+    try:
+        proxy_manager = get_proxy_manager()
+        proxy_manager.reset_index()
+        return jsonify({
+            "status": "success",
+            "message": "Proxy index reset to 0",
+            "data": {
+                "current_index": proxy_manager.get_current_index()
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
 @app.errorhandler(404)
@@ -183,18 +346,14 @@ async def shutdown():
 @app.before_serving
 async def startup():
     """Khởi tạo khi server start"""
-    print("🎯 Server đã sẵn sàng nhận requests")
-    
-    # Cài đặt Playwright browsers nếu chưa có
     try:
         from playwright.async_api import async_playwright
         async with async_playwright() as p:
-            # Test browser launch
             browser = await p.chromium.launch(headless=True)
             await browser.close()
-        print("✅ Playwright browsers đã sẵn sàng")
-    except Exception as e:
-        print(f"⚠️  Playwright chưa được cài đặt. Chạy: playwright install chromium")
+        print("✅ Server sẵn sàng | Playwright OK")
+    except Exception:
+        print("✅ Server sẵn sàng | Playwright chưa cài (playwright install chromium)")
 
 
 @app.after_serving
@@ -208,12 +367,7 @@ if __name__ == '__main__':
     debug = os.environ.get('DEBUG', 'False').lower() == 'true'
     host = os.environ.get('HOST', '127.0.0.1')
     
-    print(f"\n🌐 API Server đang chạy tại: http://{host}:{port}")
-    print(f"📋 Các tools đã đăng ký: {', '.join(TOOLS.keys())}")
-    print(f"🔧 Debug mode: {debug}")
-    print("\n📖 Để chạy production, dùng:")
-    print(f"   hypercorn api_server:app --bind {host}:{port}")
-    print("")
+    print("🌐 http://%s:%s | Tools: %s\n" % (host, port, ", ".join(TOOLS.keys())))
     
     # Chạy với Quart dev server
     app.run(host=host, port=port, debug=debug)

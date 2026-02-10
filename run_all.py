@@ -26,10 +26,10 @@ def signal_handler(sig, frame):
         shutdown_all()
 
 def kill_old_processes():
-    """Kill các processes cũ đang chạy (api_server.py, workers)"""
+    """Kill các processes cũ đang chạy (api_server.py, workers). Trả về số process đã kill."""
     if not PSUTIL_AVAILABLE:
-        print("⚠️ Bỏ qua kill processes cũ (psutil chưa được cài đặt)")
-        return
+        print("⚠️ Bỏ qua dọn process cũ (pip install psutil)")
+        return 0
     
     scripts_to_kill = [
         'api_server.py',
@@ -46,12 +46,9 @@ def kill_old_processes():
                 cmdline = proc.info.get('cmdline', [])
                 if not cmdline:
                     continue
-                
-                # Check if this process is running one of our scripts
                 cmdline_str = ' '.join(cmdline).lower()
                 for script in scripts_to_kill:
                     if script.lower() in cmdline_str and 'python' in cmdline_str:
-                        print(f"🔪 Tìm thấy process cũ: PID {proc.info['pid']} - {script}")
                         try:
                             proc.terminate()
                             killed_count += 1
@@ -62,16 +59,12 @@ def kill_old_processes():
                 pass
         
         if killed_count > 0:
-            print(f"⏳ Đang đợi {killed_count} process cũ dừng...")
             time.sleep(2)
-            
-            # Force kill nếu vẫn còn chạy
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
                     cmdline = proc.info.get('cmdline', [])
                     if not cmdline:
                         continue
-                    
                     cmdline_str = ' '.join(cmdline).lower()
                     for script in scripts_to_kill:
                         if script.lower() in cmdline_str and 'python' in cmdline_str:
@@ -82,12 +75,9 @@ def kill_old_processes():
                             break
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
-            
-            print(f"✅ Đã dọn dẹp {killed_count} process cũ")
-        else:
-            print("✅ Không có process cũ nào đang chạy")
     except Exception as e:
-        print(f"⚠️ Lỗi khi kill processes cũ: {e}")
+        print(f"⚠️ Lỗi dọn process cũ: {e}")
+    return killed_count
 
 def check_port(port, host='127.0.0.1'):
     """Kiểm tra port đã được sử dụng chưa"""
@@ -156,80 +146,77 @@ def shutdown_all():
 def run():
     global processes
     
-    # Bước 1: Kill các processes cũ
-    print("🔍 Đang kiểm tra và dọn dẹp processes cũ...")
-    kill_old_processes()
-    
-    # Bước 2: Kiểm tra port 5000 (api_server)
-    print("🔍 Đang kiểm tra port 5000...")
-    if check_port(5000):
-        print("⚠️ Port 5000 đang được sử dụng. Đang kill process sử dụng port này...")
-        if PSUTIL_AVAILABLE:
-            try:
-                for proc in psutil.process_iter(['pid', 'name', 'connections']):
-                    try:
-                        connections = proc.info.get('connections', [])
-                        for conn in connections:
-                            if conn.laddr.port == 5000:
-                                print(f"🔪 Kill process {proc.info['pid']} đang dùng port 5000")
-                                proc.kill()
-                                time.sleep(1)
-                                break
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                        pass
-            except Exception as e:
-                print(f"⚠️ Lỗi khi kill process dùng port 5000: {e}")
-        else:
-            print("⚠️ Không thể kill process dùng port 5000 (psutil chưa được cài đặt)")
-            print("⚠️ Vui lòng kill process thủ công hoặc cài đặt psutil: pip install psutil")
+    killed = kill_old_processes()
+    if PSUTIL_AVAILABLE:
+        print("✅ Process cũ: %s" % ("đã dọn %d" % killed if killed else "không có"))
+    if check_port(5000) and PSUTIL_AVAILABLE:
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'connections']):
+                try:
+                    for conn in (proc.info.get('connections') or []):
+                        if getattr(conn.laddr, 'port', None) == 5000:
+                            proc.kill()
+                            time.sleep(1)
+                            break
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
+        except Exception as e:
+            print("⚠️ Port 5000: %s" % e)
+    print("✅ Port 5000 sẵn sàng")
     
     python_cmd = "py" if sys.platform == "win32" else "python"
-    
     num_go_quick_workers = 10
-    
     cmds = [
         [python_cmd, "api_server.py"],
         [python_cmd, "workers/go_soft_worker.py"],
+        [python_cmd, "workers/go_invoice_worker.py"],
+        [python_cmd, "workers/go_bot_worker.py"],
     ]
-    
-    for i in range(num_go_quick_workers):
+    for _ in range(num_go_quick_workers):
         cmds.append([python_cmd, "workers/go_quick_worker.py"])
-
-    # Register signal handler for graceful shutdown
     try:
         signal.signal(signal.SIGINT, signal_handler)
         if sys.platform != "win32":
             signal.signal(signal.SIGTERM, signal_handler)
     except (ValueError, OSError):
-        # Signal handler may not work in all contexts
         pass
     
-    print("\n🚀 Đang khởi động các services...")
+    print("🚀 Khởi động: api_server, go_soft, go_invoice, go_bot, go_quick×%d" % num_go_quick_workers)
     for cmd in cmds:
-        print(f"✅ Started: {' '.join(cmd)}")
         try:
-            p = subprocess.Popen(cmd, shell=(sys.platform == "win32"))
+            p = subprocess.Popen(
+                cmd,
+                shell=False,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+            )
             processes.append(p)
-            time.sleep(0.2)  # Đợi một chút giữa các process để tránh conflict
+            time.sleep(0.5)
         except Exception as e:
-            print(f"❌ Lỗi khi start {' '.join(cmd)}: {e}")
-    
-    print(f"\n✅ Đã khởi động {len(processes)} processes")
-    print("📋 Đang chạy... (Nhấn Ctrl+C để dừng)\n")
+            print("❌ Lỗi start %s: %s" % (" ".join(cmd), e))
+    print("✅ %d processes đang chạy | Ctrl+C để dừng\n" % len(processes))
 
     try:
-        # Wait for all processes
-        for p in processes:
-            p.wait()
+        # Vong lap sleep de Ctrl+C ngat duoc (tren Windows p.wait() co the khong nhan SIGINT)
+        while True:
+            alive = [p for p in processes if p.poll() is None]
+            if not alive:
+                print("Tat ca processes da thoat.")
+                break
+            time.sleep(1)
     except KeyboardInterrupt:
         if not shutdown_requested:
+            shutdown_requested = True
+            print("\n🛑 Ctrl+C - Đang shutdown...")
             shutdown_all()
 
 if __name__ == "__main__":
     try:
         run()
     except KeyboardInterrupt:
-        shutdown_all()
+        if not shutdown_requested:
+            shutdown_requested = True
+            print("\n🛑 Ctrl+C - Đang shutdown...")
+            shutdown_all()
     except Exception as e:
         print(f"❌ Lỗi: {e}")
         shutdown_all()

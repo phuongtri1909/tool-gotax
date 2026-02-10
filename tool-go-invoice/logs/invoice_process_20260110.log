@@ -1,0 +1,905 @@
+2026-01-10 01:52:28,408 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277714e447a784a514451566b4c50774a62496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d546731496c303d00f07fffffcdf07fffffcd00c524f83dbba927558f33e57c3e639bbc0042 | Status: 200 | Response size: 212222 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 01:52:28,950 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364e6144754a51445156634950774a62496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d544d31496c303d00f07fffff9bf07fffff9b005249c3d114b08756e1b3c62299c437460042 | Status: 200 | Response size: 214289 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 01:52:29,407 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364b6a64725a51445156554650774662496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694f44556958513d3d00f07fffff69f07fffff690095111e495d4cfa9434ff284d60eb2e5b0042 | Status: 200 | Response size: 213110 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 01:52:29,792 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364f4f6a6e70514451564d4350774662496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d7a556958513d3d00f07fffff37f07fffff37007cf7e2b8fdc61837ceefa07ea9d66c940042 | Status: 200 | Response size: 145212 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 01:52:34,272 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 01:52:34,272 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 01/01/2025 to 28/01/2025
+2026-01-10 01:52:34,558 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 29/01/2025 to 31/01/2025
+2026-01-10 01:52:34,559 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 29/01/2025 to 31/01/2025
+2026-01-10 01:52:38,143 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 29/01/2025 to 31/01/2025
+2026-01-10 01:52:38,144 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 29/01/2025 to 31/01/2025
+2026-01-10 01:52:39,028 - backend_.backend_service - INFO - Processing invoice 1/234 - Status Code: 200 - SIZE: 317605 bytes
+2026-01-10 01:52:45,822 - backend_.backend_service - INFO - Processing invoice 2/234 - Status Code: 200 - SIZE: 329207 bytes
+2026-01-10 01:52:46,269 - backend_.backend_service - INFO - Processing invoice 3/234 - Status Code: 200 - SIZE: 321147 bytes
+2026-01-10 01:52:46,780 - backend_.backend_service - INFO - Processing invoice 4/234 - Status Code: 200 - SIZE: 317533 bytes
+2026-01-10 01:52:47,221 - backend_.backend_service - INFO - Processing invoice 5/234 - Status Code: 200 - SIZE: 320099 bytes
+2026-01-10 01:52:47,685 - backend_.backend_service - INFO - Processing invoice 6/234 - Status Code: 200 - SIZE: 317780 bytes
+2026-01-10 01:52:48,170 - backend_.backend_service - INFO - Processing invoice 7/234 - Status Code: 200 - SIZE: 321261 bytes
+2026-01-10 01:52:48,757 - backend_.backend_service - INFO - Processing invoice 8/234 - Status Code: 200 - SIZE: 321239 bytes
+2026-01-10 01:52:49,218 - backend_.backend_service - INFO - Processing invoice 9/234 - Status Code: 200 - SIZE: 319485 bytes
+2026-01-10 01:52:52,975 - backend_.backend_service - INFO - Processing invoice 10/234 - Status Code: 200 - SIZE: 322198 bytes
+2026-01-10 01:52:53,487 - backend_.backend_service - INFO - Processing invoice 11/234 - Status Code: 200 - SIZE: 318552 bytes
+2026-01-10 01:52:54,118 - backend_.backend_service - INFO - Processing invoice 12/234 - Status Code: 200 - SIZE: 318289 bytes
+2026-01-10 01:52:57,758 - backend_.backend_service - INFO - Processing invoice 13/234 - Status Code: 200 - SIZE: 317317 bytes
+2026-01-10 01:52:58,216 - backend_.backend_service - INFO - Processing invoice 14/234 - Status Code: 200 - SIZE: 317413 bytes
+2026-01-10 01:52:58,710 - backend_.backend_service - INFO - Processing invoice 15/234 - Status Code: 200 - SIZE: 318314 bytes
+2026-01-10 01:52:59,194 - backend_.backend_service - INFO - Processing invoice 16/234 - Status Code: 200 - SIZE: 320955 bytes
+2026-01-10 01:52:59,658 - backend_.backend_service - INFO - Processing invoice 17/234 - Status Code: 200 - SIZE: 318314 bytes
+2026-01-10 01:53:00,204 - backend_.backend_service - INFO - Processing invoice 18/234 - Status Code: 200 - SIZE: 317411 bytes
+2026-01-10 01:53:00,990 - backend_.backend_service - INFO - Processing invoice 19/234 - Status Code: 200 - SIZE: 317358 bytes
+2026-01-10 01:53:01,498 - backend_.backend_service - INFO - Processing invoice 20/234 - Status Code: 200 - SIZE: 317439 bytes
+2026-01-10 01:53:01,979 - backend_.backend_service - INFO - Processing invoice 21/234 - Status Code: 200 - SIZE: 317449 bytes
+2026-01-10 01:53:05,590 - backend_.backend_service - INFO - Processing invoice 22/234 - Status Code: 200 - SIZE: 318403 bytes
+2026-01-10 01:53:09,243 - backend_.backend_service - INFO - Processing invoice 23/234 - Status Code: 200 - SIZE: 321026 bytes
+2026-01-10 01:53:09,983 - backend_.backend_service - INFO - Processing invoice 24/234 - Status Code: 200 - SIZE: 318633 bytes
+2026-01-10 01:53:10,470 - backend_.backend_service - INFO - Processing invoice 25/234 - Status Code: 200 - SIZE: 321103 bytes
+2026-01-10 01:53:10,983 - backend_.backend_service - INFO - Processing invoice 26/234 - Status Code: 200 - SIZE: 342396 bytes
+2026-01-10 01:53:11,457 - backend_.backend_service - INFO - Processing invoice 27/234 - Status Code: 200 - SIZE: 317455 bytes
+2026-01-10 01:53:27,679 - backend_.backend_service - INFO - Processing invoice 28/234 - Status Code: 200 - SIZE: 320211 bytes
+2026-01-10 01:53:31,387 - backend_.backend_service - INFO - Processing invoice 29/234 - Status Code: 200 - SIZE: 317395 bytes
+2026-01-10 01:53:38,342 - backend_.backend_service - INFO - Processing invoice 30/234 - Status Code: 200 - SIZE: 320267 bytes
+2026-01-10 01:53:38,862 - backend_.backend_service - INFO - Processing invoice 31/234 - Status Code: 200 - SIZE: 331430 bytes
+2026-01-10 01:53:45,680 - backend_.backend_service - INFO - Processing invoice 32/234 - Status Code: 200 - SIZE: 348244 bytes
+2026-01-10 01:53:52,489 - backend_.backend_service - INFO - Processing invoice 33/234 - Status Code: 200 - SIZE: 317591 bytes
+2026-01-10 01:53:52,978 - backend_.backend_service - INFO - Processing invoice 34/234 - Status Code: 200 - SIZE: 317628 bytes
+2026-01-10 01:53:59,778 - backend_.backend_service - INFO - Processing invoice 35/234 - Status Code: 200 - SIZE: 318620 bytes
+2026-01-10 01:54:06,532 - backend_.backend_service - INFO - Processing invoice 36/234 - Status Code: 200 - SIZE: 321136 bytes
+2026-01-10 01:54:07,013 - backend_.backend_service - INFO - Processing invoice 37/234 - Status Code: 200 - SIZE: 317533 bytes
+2026-01-10 01:54:16,871 - backend_.backend_service - INFO - Processing invoice 38/234 - Status Code: 200 - SIZE: 320290 bytes
+2026-01-10 01:54:17,362 - backend_.backend_service - INFO - Processing invoice 39/234 - Status Code: 200 - SIZE: 317567 bytes
+2026-01-10 01:54:17,987 - backend_.backend_service - INFO - Processing invoice 40/234 - Status Code: 200 - SIZE: 317557 bytes
+2026-01-10 01:54:21,650 - backend_.backend_service - INFO - Processing invoice 41/234 - Status Code: 200 - SIZE: 317533 bytes
+2026-01-10 01:54:28,388 - backend_.backend_service - INFO - Processing invoice 42/234 - Status Code: 200 - SIZE: 321174 bytes
+2026-01-10 01:54:32,059 - backend_.backend_service - INFO - Processing invoice 43/234 - Status Code: 200 - SIZE: 317557 bytes
+2026-01-10 01:54:32,608 - backend_.backend_service - INFO - Processing invoice 44/234 - Status Code: 200 - SIZE: 321147 bytes
+2026-01-10 01:54:33,075 - backend_.backend_service - INFO - Processing invoice 45/234 - Status Code: 200 - SIZE: 319683 bytes
+2026-01-10 01:54:33,713 - backend_.backend_service - INFO - Processing invoice 46/234 - Status Code: 200 - SIZE: 317488 bytes
+2026-01-10 01:54:34,205 - backend_.backend_service - INFO - Processing invoice 47/234 - Status Code: 200 - SIZE: 319592 bytes
+2026-01-10 01:54:34,711 - backend_.backend_service - INFO - Processing invoice 48/234 - Status Code: 200 - SIZE: 320357 bytes
+2026-01-10 01:54:35,195 - backend_.backend_service - INFO - Processing invoice 49/234 - Status Code: 200 - SIZE: 317776 bytes
+2026-01-10 01:54:38,877 - backend_.backend_service - INFO - Processing invoice 50/234 - Status Code: 200 - SIZE: 317782 bytes
+2026-01-10 01:54:39,593 - backend_.backend_service - INFO - Processing invoice 51/234 - Status Code: 200 - SIZE: 317348 bytes
+2026-01-10 01:54:43,176 - backend_.backend_service - INFO - Processing invoice 52/234 - Status Code: 200 - SIZE: 317416 bytes
+2026-01-10 01:54:46,827 - backend_.backend_service - INFO - Processing invoice 53/234 - Status Code: 200 - SIZE: 317391 bytes
+2026-01-10 01:54:50,514 - backend_.backend_service - INFO - Processing invoice 54/234 - Status Code: 200 - SIZE: 320026 bytes
+2026-01-10 01:54:51,276 - backend_.backend_service - INFO - Processing invoice 55/234 - Status Code: 200 - SIZE: 317387 bytes
+2026-01-10 01:54:55,093 - backend_.backend_service - INFO - Processing invoice 56/234 - Status Code: 200 - SIZE: 323753 bytes
+2026-01-10 01:54:55,577 - backend_.backend_service - INFO - Processing invoice 57/234 - Status Code: 200 - SIZE: 317295 bytes
+2026-01-10 01:54:56,129 - backend_.backend_service - INFO - Processing invoice 58/234 - Status Code: 200 - SIZE: 357579 bytes
+2026-01-10 01:54:56,591 - backend_.backend_service - INFO - Processing invoice 59/234 - Status Code: 200 - SIZE: 320321 bytes
+2026-01-10 01:54:57,183 - backend_.backend_service - INFO - Processing invoice 60/234 - Status Code: 200 - SIZE: 320261 bytes
+2026-01-10 01:54:57,659 - backend_.backend_service - INFO - Processing invoice 61/234 - Status Code: 200 - SIZE: 317698 bytes
+2026-01-10 01:55:01,283 - backend_.backend_service - INFO - Processing invoice 62/234 - Status Code: 200 - SIZE: 321020 bytes
+2026-01-10 01:55:08,032 - backend_.backend_service - INFO - Processing invoice 63/234 - Status Code: 200 - SIZE: 319298 bytes
+2026-01-10 01:55:11,683 - backend_.backend_service - INFO - Processing invoice 64/234 - Status Code: 200 - SIZE: 320332 bytes
+2026-01-10 01:55:12,195 - backend_.backend_service - INFO - Processing invoice 65/234 - Status Code: 200 - SIZE: 317368 bytes
+2026-01-10 01:55:15,854 - backend_.backend_service - INFO - Processing invoice 66/234 - Status Code: 200 - SIZE: 319379 bytes
+2026-01-10 01:55:19,624 - backend_.backend_service - INFO - Processing invoice 67/234 - Status Code: 200 - SIZE: 317335 bytes
+2026-01-10 01:55:20,096 - backend_.backend_service - INFO - Processing invoice 68/234 - Status Code: 200 - SIZE: 317452 bytes
+2026-01-10 01:55:20,613 - backend_.backend_service - INFO - Processing invoice 69/234 - Status Code: 200 - SIZE: 318332 bytes
+2026-01-10 01:55:21,109 - backend_.backend_service - INFO - Processing invoice 70/234 - Status Code: 200 - SIZE: 317403 bytes
+2026-01-10 01:55:21,831 - backend_.backend_service - INFO - Processing invoice 71/234 - Status Code: 200 - SIZE: 317401 bytes
+2026-01-10 01:55:22,326 - backend_.backend_service - INFO - Processing invoice 72/234 - Status Code: 200 - SIZE: 347520 bytes
+2026-01-10 01:55:32,311 - backend_.backend_service - INFO - Processing invoice 73/234 - Status Code: 200 - SIZE: 350220 bytes
+2026-01-10 01:55:42,212 - backend_.backend_service - INFO - Processing invoice 74/234 - Status Code: 200 - SIZE: 319317 bytes
+2026-01-10 01:55:42,697 - backend_.backend_service - INFO - Processing invoice 75/234 - Status Code: 200 - SIZE: 317689 bytes
+2026-01-10 01:55:43,218 - backend_.backend_service - INFO - Processing invoice 76/234 - Status Code: 200 - SIZE: 318193 bytes
+2026-01-10 01:55:47,134 - backend_.backend_service - INFO - Processing invoice 77/234 - Status Code: 200 - SIZE: 375582 bytes
+2026-01-10 01:55:47,648 - backend_.backend_service - INFO - Processing invoice 78/234 - Status Code: 200 - SIZE: 318492 bytes
+2026-01-10 01:55:48,106 - backend_.backend_service - INFO - Processing invoice 79/234 - Status Code: 200 - SIZE: 317319 bytes
+2026-01-10 01:55:51,825 - backend_.backend_service - INFO - Processing invoice 80/234 - Status Code: 200 - SIZE: 323998 bytes
+2026-01-10 01:55:52,502 - backend_.backend_service - INFO - Processing invoice 81/234 - Status Code: 200 - SIZE: 317433 bytes
+2026-01-10 01:55:53,001 - backend_.backend_service - INFO - Processing invoice 82/234 - Status Code: 200 - SIZE: 317289 bytes
+2026-01-10 01:55:53,477 - backend_.backend_service - INFO - Processing invoice 83/234 - Status Code: 200 - SIZE: 318357 bytes
+2026-01-10 01:55:53,988 - backend_.backend_service - INFO - Processing invoice 84/234 - Status Code: 200 - SIZE: 333840 bytes
+2026-01-10 01:55:54,587 - backend_.backend_service - INFO - Processing invoice 85/234 - Status Code: 200 - SIZE: 367874 bytes
+2026-01-10 01:55:55,438 - backend_.backend_service - INFO - Processing invoice 86/234 - Status Code: 200 - SIZE: 371239 bytes
+2026-01-10 01:56:05,413 - backend_.backend_service - INFO - Processing invoice 87/234 - Status Code: 200 - SIZE: 319130 bytes
+2026-01-10 01:56:05,806 - backend_.backend_service - INFO - Processing invoice 88/234 - Status Code: 200 - SIZE: 318225 bytes
+2026-01-10 01:56:06,290 - backend_.backend_service - INFO - Processing invoice 89/234 - Status Code: 200 - SIZE: 317418 bytes
+2026-01-10 01:56:09,952 - backend_.backend_service - INFO - Processing invoice 90/234 - Status Code: 200 - SIZE: 320483 bytes
+2026-01-10 01:56:10,410 - backend_.backend_service - INFO - Processing invoice 91/234 - Status Code: 200 - SIZE: 348158 bytes
+2026-01-10 01:56:10,967 - backend_.backend_service - INFO - Processing invoice 92/234 - Status Code: 200 - SIZE: 320449 bytes
+2026-01-10 01:56:11,510 - backend_.backend_service - INFO - Processing invoice 93/234 - Status Code: 200 - SIZE: 319434 bytes
+2026-01-10 01:56:11,971 - backend_.backend_service - INFO - Processing invoice 94/234 - Status Code: 200 - SIZE: 318533 bytes
+2026-01-10 01:56:12,449 - backend_.backend_service - INFO - Processing invoice 95/234 - Status Code: 200 - SIZE: 320927 bytes
+2026-01-10 01:56:12,998 - backend_.backend_service - INFO - Processing invoice 96/234 - Status Code: 200 - SIZE: 317310 bytes
+2026-01-10 01:56:13,543 - backend_.backend_service - INFO - Processing invoice 97/234 - Status Code: 200 - SIZE: 317433 bytes
+2026-01-10 01:56:29,820 - backend_.backend_service - INFO - Processing invoice 98/234 - Status Code: 200 - SIZE: 319258 bytes
+2026-01-10 01:56:30,314 - backend_.backend_service - INFO - Processing invoice 99/234 - Status Code: 200 - SIZE: 317313 bytes
+2026-01-10 01:56:30,794 - backend_.backend_service - INFO - Processing invoice 100/234 - Status Code: 200 - SIZE: 317335 bytes
+2026-01-10 01:56:31,248 - backend_.backend_service - INFO - Processing invoice 101/234 - Status Code: 200 - SIZE: 317354 bytes
+2026-01-10 01:56:34,945 - backend_.backend_service - INFO - Processing invoice 102/234 - Status Code: 200 - SIZE: 319378 bytes
+2026-01-10 01:56:35,497 - backend_.backend_service - INFO - Processing invoice 103/234 - Status Code: 200 - SIZE: 321281 bytes
+2026-01-10 01:56:35,949 - backend_.backend_service - INFO - Processing invoice 104/234 - Status Code: 200 - SIZE: 321214 bytes
+2026-01-10 01:56:36,386 - backend_.backend_service - INFO - Processing invoice 105/234 - Status Code: 200 - SIZE: 318593 bytes
+2026-01-10 01:56:36,891 - backend_.backend_service - INFO - Processing invoice 106/234 - Status Code: 200 - SIZE: 317556 bytes
+2026-01-10 01:56:40,906 - backend_.backend_service - INFO - Processing invoice 107/234 - Status Code: 200 - SIZE: 317442 bytes
+2026-01-10 01:56:41,395 - backend_.backend_service - INFO - Processing invoice 108/234 - Status Code: 200 - SIZE: 317329 bytes
+2026-01-10 01:56:41,880 - backend_.backend_service - INFO - Processing invoice 109/234 - Status Code: 200 - SIZE: 320030 bytes
+2026-01-10 01:56:45,496 - backend_.backend_service - INFO - Processing invoice 110/234 - Status Code: 200 - SIZE: 347407 bytes
+2026-01-10 01:56:45,999 - backend_.backend_service - INFO - Processing invoice 111/234 - Status Code: 200 - SIZE: 317296 bytes
+2026-01-10 01:56:49,605 - backend_.backend_service - INFO - Processing invoice 112/234 - Status Code: 200 - SIZE: 354075 bytes
+2026-01-10 01:56:56,677 - backend_.backend_service - INFO - Processing invoice 113/234 - Status Code: 200 - SIZE: 326336 bytes
+2026-01-10 01:57:07,000 - backend_.backend_service - INFO - Processing invoice 114/234 - Status Code: 200 - SIZE: 332220 bytes
+2026-01-10 01:57:07,498 - backend_.backend_service - INFO - Processing invoice 115/234 - Status Code: 200 - SIZE: 327719 bytes
+2026-01-10 01:57:20,509 - backend_.backend_service - INFO - Processing invoice 116/234 - Status Code: 200 - SIZE: 317326 bytes
+2026-01-10 01:57:20,991 - backend_.backend_service - INFO - Processing invoice 117/234 - Status Code: 200 - SIZE: 318392 bytes
+2026-01-10 01:57:21,460 - backend_.backend_service - INFO - Processing invoice 118/234 - Status Code: 200 - SIZE: 317378 bytes
+2026-01-10 01:57:21,996 - backend_.backend_service - INFO - Processing invoice 119/234 - Status Code: 200 - SIZE: 317329 bytes
+2026-01-10 01:57:31,847 - backend_.backend_service - INFO - Processing invoice 120/234 - Status Code: 200 - SIZE: 317510 bytes
+2026-01-10 01:57:35,474 - backend_.backend_service - INFO - Processing invoice 121/234 - Status Code: 200 - SIZE: 321158 bytes
+2026-01-10 01:57:35,951 - backend_.backend_service - INFO - Processing invoice 122/234 - Status Code: 200 - SIZE: 317565 bytes
+2026-01-10 01:57:36,537 - backend_.backend_service - INFO - Processing invoice 123/234 - Status Code: 200 - SIZE: 317533 bytes
+2026-01-10 01:57:36,997 - backend_.backend_service - INFO - Processing invoice 124/234 - Status Code: 200 - SIZE: 318501 bytes
+2026-01-10 01:57:37,587 - backend_.backend_service - INFO - Processing invoice 125/234 - Status Code: 200 - SIZE: 317623 bytes
+2026-01-10 01:57:41,224 - backend_.backend_service - INFO - Processing invoice 126/234 - Status Code: 200 - SIZE: 317646 bytes
+2026-01-10 01:57:48,119 - backend_.backend_service - INFO - Processing invoice 127/234 - Status Code: 200 - SIZE: 317700 bytes
+2026-01-10 01:57:51,774 - backend_.backend_service - INFO - Processing invoice 128/234 - Status Code: 200 - SIZE: 320414 bytes
+2026-01-10 01:57:52,403 - backend_.backend_service - INFO - Processing invoice 129/234 - Status Code: 200 - SIZE: 324010 bytes
+2026-01-10 01:57:53,020 - backend_.backend_service - INFO - Processing invoice 130/234 - Status Code: 200 - SIZE: 317499 bytes
+2026-01-10 01:57:53,483 - backend_.backend_service - INFO - Processing invoice 131/234 - Status Code: 200 - SIZE: 320263 bytes
+2026-01-10 01:57:53,924 - backend_.backend_service - INFO - Processing invoice 132/234 - Status Code: 200 - SIZE: 317293 bytes
+2026-01-10 01:57:54,516 - backend_.backend_service - INFO - Processing invoice 133/234 - Status Code: 200 - SIZE: 348402 bytes
+2026-01-10 01:57:55,024 - backend_.backend_service - INFO - Processing invoice 134/234 - Status Code: 200 - SIZE: 319391 bytes
+2026-01-10 01:57:58,630 - backend_.backend_service - INFO - Processing invoice 135/234 - Status Code: 200 - SIZE: 322054 bytes
+2026-01-10 01:57:59,509 - backend_.backend_service - INFO - Processing invoice 136/234 - Status Code: 200 - SIZE: 318418 bytes
+2026-01-10 01:58:00,213 - backend_.backend_service - INFO - Processing invoice 137/234 - Status Code: 200 - SIZE: 317575 bytes
+2026-01-10 01:58:00,663 - backend_.backend_service - INFO - Processing invoice 138/234 - Status Code: 200 - SIZE: 317435 bytes
+2026-01-10 01:58:07,443 - backend_.backend_service - INFO - Processing invoice 139/234 - Status Code: 200 - SIZE: 320263 bytes
+2026-01-10 01:58:07,939 - backend_.backend_service - INFO - Processing invoice 140/234 - Status Code: 200 - SIZE: 319374 bytes
+2026-01-10 01:58:08,464 - backend_.backend_service - INFO - Processing invoice 141/234 - Status Code: 200 - SIZE: 320253 bytes
+2026-01-10 01:58:09,498 - backend_.backend_service - INFO - Processing invoice 142/234 - Status Code: 200 - SIZE: 320256 bytes
+2026-01-10 01:58:13,062 - backend_.backend_service - INFO - Processing invoice 143/234 - Status Code: 200 - SIZE: 320247 bytes
+2026-01-10 01:58:13,521 - backend_.backend_service - INFO - Processing invoice 144/234 - Status Code: 200 - SIZE: 319333 bytes
+2026-01-10 01:58:14,029 - backend_.backend_service - INFO - Processing invoice 145/234 - Status Code: 200 - SIZE: 320250 bytes
+2026-01-10 01:58:14,545 - backend_.backend_service - INFO - Processing invoice 146/234 - Status Code: 200 - SIZE: 320263 bytes
+2026-01-10 01:58:15,032 - backend_.backend_service - INFO - Processing invoice 147/234 - Status Code: 200 - SIZE: 319453 bytes
+2026-01-10 01:58:15,513 - backend_.backend_service - INFO - Processing invoice 148/234 - Status Code: 200 - SIZE: 335965 bytes
+2026-01-10 01:58:15,955 - backend_.backend_service - INFO - Processing invoice 149/234 - Status Code: 200 - SIZE: 342286 bytes
+2026-01-10 01:58:16,722 - backend_.backend_service - INFO - Processing invoice 150/234 - Status Code: 200 - SIZE: 348340 bytes
+2026-01-10 01:58:17,249 - backend_.backend_service - INFO - Processing invoice 151/234 - Status Code: 200 - SIZE: 318272 bytes
+2026-01-10 01:58:17,904 - backend_.backend_service - INFO - Processing invoice 152/234 - Status Code: 200 - SIZE: 317359 bytes
+2026-01-10 01:58:18,460 - backend_.backend_service - INFO - Processing invoice 153/234 - Status Code: 200 - SIZE: 317323 bytes
+2026-01-10 01:58:18,990 - backend_.backend_service - INFO - Processing invoice 154/234 - Status Code: 200 - SIZE: 317430 bytes
+2026-01-10 01:58:22,774 - backend_.backend_service - INFO - Processing invoice 155/234 - Status Code: 200 - SIZE: 320234 bytes
+2026-01-10 01:58:26,512 - backend_.backend_service - INFO - Processing invoice 156/234 - Status Code: 200 - SIZE: 319336 bytes
+2026-01-10 01:58:27,141 - backend_.backend_service - INFO - Processing invoice 157/234 - Status Code: 200 - SIZE: 317524 bytes
+2026-01-10 01:58:30,988 - backend_.backend_service - INFO - Processing invoice 158/234 - Status Code: 200 - SIZE: 320371 bytes
+2026-01-10 01:58:37,743 - backend_.backend_service - INFO - Processing invoice 159/234 - Status Code: 200 - SIZE: 317712 bytes
+2026-01-10 01:58:41,439 - backend_.backend_service - INFO - Processing invoice 160/234 - Status Code: 200 - SIZE: 319273 bytes
+2026-01-10 01:58:45,473 - backend_.backend_service - INFO - Processing invoice 161/234 - Status Code: 200 - SIZE: 323911 bytes
+2026-01-10 01:58:46,074 - backend_.backend_service - INFO - Processing invoice 162/234 - Status Code: 200 - SIZE: 319393 bytes
+2026-01-10 01:58:46,604 - backend_.backend_service - INFO - Processing invoice 163/234 - Status Code: 200 - SIZE: 356552 bytes
+2026-01-10 01:58:47,140 - backend_.backend_service - INFO - Processing invoice 164/234 - Status Code: 200 - SIZE: 317295 bytes
+2026-01-10 01:58:47,878 - backend_.backend_service - INFO - Processing invoice 165/234 - Status Code: 200 - SIZE: 318407 bytes
+2026-01-10 01:58:48,525 - backend_.backend_service - INFO - Processing invoice 166/234 - Status Code: 200 - SIZE: 319349 bytes
+2026-01-10 01:58:49,014 - backend_.backend_service - INFO - Processing invoice 167/234 - Status Code: 200 - SIZE: 356572 bytes
+2026-01-10 01:58:49,610 - backend_.backend_service - INFO - Processing invoice 168/234 - Status Code: 200 - SIZE: 318268 bytes
+2026-01-10 01:58:50,313 - backend_.backend_service - INFO - Processing invoice 169/234 - Status Code: 200 - SIZE: 319321 bytes
+2026-01-10 01:58:57,165 - backend_.backend_service - INFO - Processing invoice 170/234 - Status Code: 200 - SIZE: 321087 bytes
+2026-01-10 01:59:00,865 - backend_.backend_service - INFO - Processing invoice 171/234 - Status Code: 200 - SIZE: 317401 bytes
+2026-01-10 01:59:01,399 - backend_.backend_service - INFO - Processing invoice 172/234 - Status Code: 200 - SIZE: 318244 bytes
+2026-01-10 01:59:01,824 - backend_.backend_service - INFO - Processing invoice 173/234 - Status Code: 200 - SIZE: 318344 bytes
+2026-01-10 01:59:02,312 - backend_.backend_service - INFO - Processing invoice 174/234 - Status Code: 200 - SIZE: 319506 bytes
+2026-01-10 01:59:05,899 - backend_.backend_service - INFO - Processing invoice 175/234 - Status Code: 200 - SIZE: 319283 bytes
+2026-01-10 01:59:06,387 - backend_.backend_service - INFO - Processing invoice 176/234 - Status Code: 200 - SIZE: 319364 bytes
+2026-01-10 01:59:10,077 - backend_.backend_service - INFO - Processing invoice 177/234 - Status Code: 200 - SIZE: 320273 bytes
+2026-01-10 01:59:23,059 - backend_.backend_service - INFO - Processing invoice 178/234 - Status Code: 200 - SIZE: 317340 bytes
+2026-01-10 01:59:23,546 - backend_.backend_service - INFO - Processing invoice 179/234 - Status Code: 200 - SIZE: 318252 bytes
+2026-01-10 01:59:24,060 - backend_.backend_service - INFO - Processing invoice 180/234 - Status Code: 200 - SIZE: 318516 bytes
+2026-01-10 01:59:24,532 - backend_.backend_service - INFO - Processing invoice 181/234 - Status Code: 200 - SIZE: 322353 bytes
+2026-01-10 01:59:37,536 - backend_.backend_service - INFO - Processing invoice 182/234 - Status Code: 200 - SIZE: 317319 bytes
+2026-01-10 01:59:37,978 - backend_.backend_service - INFO - Processing invoice 183/234 - Status Code: 200 - SIZE: 317370 bytes
+2026-01-10 01:59:38,786 - backend_.backend_service - INFO - Processing invoice 184/234 - Status Code: 200 - SIZE: 322066 bytes
+2026-01-10 01:59:45,480 - backend_.backend_service - INFO - Processing invoice 185/234 - Status Code: 200 - SIZE: 317395 bytes
+2026-01-10 01:59:45,992 - backend_.backend_service - INFO - Processing invoice 186/234 - Status Code: 200 - SIZE: 320097 bytes
+2026-01-10 01:59:46,581 - backend_.backend_service - INFO - Processing invoice 187/234 - Status Code: 200 - SIZE: 351105 bytes
+2026-01-10 01:59:47,062 - backend_.backend_service - INFO - Processing invoice 188/234 - Status Code: 200 - SIZE: 318344 bytes
+2026-01-10 01:59:47,518 - backend_.backend_service - INFO - Processing invoice 189/234 - Status Code: 200 - SIZE: 319643 bytes
+2026-01-10 01:59:47,999 - backend_.backend_service - INFO - Processing invoice 190/234 - Status Code: 200 - SIZE: 317685 bytes
+2026-01-10 01:59:48,579 - backend_.backend_service - INFO - Processing invoice 191/234 - Status Code: 200 - SIZE: 320355 bytes
+2026-01-10 01:59:49,261 - backend_.backend_service - INFO - Processing invoice 192/234 - Status Code: 200 - SIZE: 317462 bytes
+2026-01-10 01:59:49,733 - backend_.backend_service - INFO - Processing invoice 193/234 - Status Code: 200 - SIZE: 317303 bytes
+2026-01-10 01:59:50,180 - backend_.backend_service - INFO - Processing invoice 194/234 - Status Code: 200 - SIZE: 317350 bytes
+2026-01-10 01:59:50,919 - backend_.backend_service - INFO - Processing invoice 195/234 - Status Code: 200 - SIZE: 317292 bytes
+2026-01-10 01:59:51,385 - backend_.backend_service - INFO - Processing invoice 196/234 - Status Code: 200 - SIZE: 317404 bytes
+2026-01-10 01:59:51,932 - backend_.backend_service - INFO - Processing invoice 197/234 - Status Code: 200 - SIZE: 317469 bytes
+2026-01-10 01:59:52,618 - backend_.backend_service - INFO - Processing invoice 198/234 - Status Code: 200 - SIZE: 317358 bytes
+2026-01-10 01:59:53,311 - backend_.backend_service - INFO - Processing invoice 199/234 - Status Code: 200 - SIZE: 322858 bytes
+2026-01-10 01:59:53,783 - backend_.backend_service - INFO - Processing invoice 200/234 - Status Code: 200 - SIZE: 353957 bytes
+2026-01-10 01:59:54,212 - backend_.backend_service - INFO - Processing invoice 201/234 - Status Code: 200 - SIZE: 317482 bytes
+2026-01-10 01:59:57,864 - backend_.backend_service - INFO - Processing invoice 202/234 - Status Code: 200 - SIZE: 347718 bytes
+2026-01-10 01:59:58,356 - backend_.backend_service - INFO - Processing invoice 203/234 - Status Code: 200 - SIZE: 351148 bytes
+2026-01-10 01:59:58,843 - backend_.backend_service - INFO - Processing invoice 204/234 - Status Code: 200 - SIZE: 317500 bytes
+2026-01-10 02:00:11,800 - backend_.backend_service - INFO - Processing invoice 205/234 - Status Code: 200 - SIZE: 321079 bytes
+2026-01-10 02:00:12,290 - backend_.backend_service - INFO - Processing invoice 206/234 - Status Code: 200 - SIZE: 318439 bytes
+2026-01-10 02:00:12,828 - backend_.backend_service - INFO - Processing invoice 207/234 - Status Code: 200 - SIZE: 321062 bytes
+2026-01-10 02:00:13,385 - backend_.backend_service - INFO - Processing invoice 208/234 - Status Code: 200 - SIZE: 353853 bytes
+2026-01-10 02:00:13,885 - backend_.backend_service - INFO - Processing invoice 209/234 - Status Code: 200 - SIZE: 332081 bytes
+2026-01-10 02:00:14,429 - backend_.backend_service - INFO - Processing invoice 210/234 - Status Code: 200 - SIZE: 320032 bytes
+2026-01-10 02:00:14,938 - backend_.backend_service - INFO - Processing invoice 211/234 - Status Code: 200 - SIZE: 317367 bytes
+2026-01-10 02:00:15,386 - backend_.backend_service - INFO - Processing invoice 212/234 - Status Code: 200 - SIZE: 317300 bytes
+2026-01-10 02:00:18,974 - backend_.backend_service - INFO - Processing invoice 213/234 - Status Code: 200 - SIZE: 318478 bytes
+2026-01-10 02:00:19,555 - backend_.backend_service - INFO - Processing invoice 214/234 - Status Code: 200 - SIZE: 320366 bytes
+2026-01-10 02:00:20,014 - backend_.backend_service - INFO - Processing invoice 215/234 - Status Code: 200 - SIZE: 321044 bytes
+2026-01-10 02:00:20,660 - backend_.backend_service - INFO - Processing invoice 216/234 - Status Code: 200 - SIZE: 317282 bytes
+2026-01-10 02:00:21,101 - backend_.backend_service - INFO - Processing invoice 217/234 - Status Code: 200 - SIZE: 317356 bytes
+2026-01-10 02:00:21,562 - backend_.backend_service - INFO - Processing invoice 218/234 - Status Code: 200 - SIZE: 318215 bytes
+2026-01-10 02:00:25,277 - backend_.backend_service - INFO - Processing invoice 219/234 - Status Code: 200 - SIZE: 350468 bytes
+2026-01-10 02:00:25,882 - backend_.backend_service - INFO - Processing invoice 220/234 - Status Code: 200 - SIZE: 317733 bytes
+2026-01-10 02:00:26,380 - backend_.backend_service - INFO - Processing invoice 221/234 - Status Code: 200 - SIZE: 317573 bytes
+2026-01-10 02:00:39,379 - backend_.backend_service - INFO - Processing invoice 222/234 - Status Code: 200 - SIZE: 355730 bytes
+2026-01-10 02:00:42,980 - backend_.backend_service - INFO - Processing invoice 223/234 - Status Code: 200 - SIZE: 317299 bytes
+2026-01-10 02:00:43,459 - backend_.backend_service - INFO - Processing invoice 224/234 - Status Code: 200 - SIZE: 317357 bytes
+2026-01-10 02:00:43,917 - backend_.backend_service - INFO - Processing invoice 225/234 - Status Code: 200 - SIZE: 317351 bytes
+2026-01-10 02:00:44,426 - backend_.backend_service - INFO - Processing invoice 226/234 - Status Code: 200 - SIZE: 342487 bytes
+2026-01-10 02:00:44,913 - backend_.backend_service - INFO - Processing invoice 227/234 - Status Code: 200 - SIZE: 323226 bytes
+2026-01-10 02:00:45,536 - backend_.backend_service - INFO - Processing invoice 228/234 - Status Code: 200 - SIZE: 322144 bytes
+2026-01-10 02:00:46,054 - backend_.backend_service - INFO - Processing invoice 229/234 - Status Code: 200 - SIZE: 351030 bytes
+2026-01-10 02:00:46,625 - backend_.backend_service - INFO - Processing invoice 230/234 - Status Code: 200 - SIZE: 319142 bytes
+2026-01-10 02:00:50,219 - backend_.backend_service - INFO - Processing invoice 231/234 - Status Code: 200 - SIZE: 317419 bytes
+2026-01-10 02:00:50,715 - backend_.backend_service - INFO - Processing invoice 232/234 - Status Code: 200 - SIZE: 317414 bytes
+2026-01-10 02:00:51,350 - backend_.backend_service - INFO - Processing invoice 233/234 - Status Code: 200 - SIZE: 317587 bytes
+2026-01-10 02:00:51,899 - backend_.backend_service - INFO - Processing invoice 234/234 - Status Code: 200 - SIZE: 317770 bytes
+2026-01-10 02:27:58,581 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 214847 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:27:58,582 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:02,633 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277714e447a784a514451566b4c50774a62496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d546731496c303d00f07fffffcdf07fffffcd00c524f83dbba927558f33e57c3e639bbc0042 | Status: 200 | Response size: 212221 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:06,306 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364e6144754a51445156634950774a62496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d544d31496c303d00f07fffff9bf07fffff9b005249c3d114b08756e1b3c62299c437460042 | Status: 200 | Response size: 214289 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:10,379 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364b6a64725a51445156554650774662496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694f44556958513d3d00f07fffff69f07fffff690095111e495d4cfa9434ff284d60eb2e5b0042 | Status: 200 | Response size: 213110 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:15,271 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364f4f6a6e70514451564d4350774662496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d7a556958513d3d00f07fffff37f07fffff37007cf7e2b8fdc61837ceefa07ea9d66c940042 | Status: 200 | Response size: 145213 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:19,770 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:19,770 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 01/01/2025 to 28/01/2025
+2026-01-10 02:28:20,106 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 29/01/2025 to 31/01/2025
+2026-01-10 02:28:20,107 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 29/01/2025 to 31/01/2025
+2026-01-10 02:28:24,277 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 29/01/2025 to 31/01/2025
+2026-01-10 02:28:24,277 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 29/01/2025 to 31/01/2025
+2026-01-10 02:28:28,382 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4982 bytes | Attempt: 1 | | Invoice 2/234 |
+2026-01-10 02:28:28,697 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 12183 bytes | Attempt: 1 | | Invoice 3/234 |
+2026-01-10 02:28:29,137 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7186 bytes | Attempt: 1 | | Invoice 4/234 |
+2026-01-10 02:28:29,397 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 1 | | Invoice 5/234 |
+2026-01-10 02:28:29,694 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6529 bytes | Attempt: 1 | | Invoice 6/234 |
+2026-01-10 02:28:29,967 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5056 bytes | Attempt: 1 | | Invoice 7/234 |
+2026-01-10 02:28:34,148 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7227 bytes | Attempt: 1 | | Invoice 8/234 |
+2026-01-10 02:28:38,295 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7220 bytes | Attempt: 1 | | Invoice 9/234 |
+2026-01-10 02:28:42,408 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6148 bytes | Attempt: 1 | | Invoice 10/234 |
+2026-01-10 02:28:42,691 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7802 bytes | Attempt: 1 | | Invoice 11/234 |
+2026-01-10 02:28:46,030 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5550 bytes | Attempt: 1 | | Invoice 12/234 |
+2026-01-10 02:28:46,301 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5453 bytes | Attempt: 1 | | Invoice 13/234 |
+2026-01-10 02:28:50,200 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4850 bytes | Attempt: 1 | | Invoice 14/234 |
+2026-01-10 02:28:54,293 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4887 bytes | Attempt: 1 | | Invoice 15/234 |
+2026-01-10 02:28:54,575 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5441 bytes | Attempt: 1 | | Invoice 16/234 |
+2026-01-10 02:28:54,844 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7070 bytes | Attempt: 1 | | Invoice 17/234 |
+2026-01-10 02:28:55,130 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5460 bytes | Attempt: 1 | | Invoice 18/234 |
+2026-01-10 02:28:55,416 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4898 bytes | Attempt: 1 | | Invoice 19/234 |
+2026-01-10 02:28:55,578 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-216 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:28:55,858 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4868 bytes | Attempt: 2 | | Invoice 20/234 |
+2026-01-10 02:28:56,048 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-215 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:28:56,225 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-215 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:29:00,034 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4900 bytes | Attempt: 3 | | Invoice 21/234 |
+2026-01-10 02:29:04,180 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4917 bytes | Attempt: 1 | | Invoice 22/234 |
+2026-01-10 02:29:04,447 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5463 bytes | Attempt: 1 | | Invoice 23/234 |
+2026-01-10 02:29:08,340 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7084 bytes | Attempt: 1 | | Invoice 24/234 |
+2026-01-10 02:29:08,642 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5600 bytes | Attempt: 1 | | Invoice 25/234 |
+2026-01-10 02:29:08,902 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7155 bytes | Attempt: 1 | | Invoice 26/234 |
+2026-01-10 02:29:09,309 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 20474 bytes | Attempt: 1 | | Invoice 27/234 |
+2026-01-10 02:29:09,571 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4906 bytes | Attempt: 1 | | Invoice 28/234 |
+2026-01-10 02:29:09,710 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-207 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:29:09,974 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6595 bytes | Attempt: 2 | | Invoice 29/234 |
+2026-01-10 02:29:10,130 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-206 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:29:14,030 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4893 bytes | Attempt: 2 | | Invoice 30/234 |
+2026-01-10 02:29:18,177 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6623 bytes | Attempt: 1 | | Invoice 31/234 |
+2026-01-10 02:29:22,361 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 13335 bytes | Attempt: 1 | | Invoice 32/234 |
+2026-01-10 02:29:22,642 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23726 bytes | Attempt: 1 | | Invoice 33/234 |
+2026-01-10 02:29:23,005 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4980 bytes | Attempt: 1 | | Invoice 34/234 |
+2026-01-10 02:29:27,052 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4983 bytes | Attempt: 1 | | Invoice 35/234 |
+2026-01-10 02:29:27,406 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5586 bytes | Attempt: 1 | | Invoice 36/234 |
+2026-01-10 02:29:27,680 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7186 bytes | Attempt: 1 | | Invoice 37/234 |
+2026-01-10 02:29:27,947 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 1 | | Invoice 38/234 |
+2026-01-10 02:29:28,220 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6651 bytes | Attempt: 1 | | Invoice 39/234 |
+2026-01-10 02:29:28,383 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-196 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:29:28,539 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-196 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:29:28,673 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-196 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:29:32,211 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4975 bytes | Attempt: 4 | | Invoice 40/234 |
+2026-01-10 02:29:32,474 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4973 bytes | Attempt: 1 | | Invoice 41/234 |
+2026-01-10 02:29:32,702 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 1 | | Invoice 42/234 |
+2026-01-10 02:29:36,401 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7197 bytes | Attempt: 1 | | Invoice 43/234 |
+2026-01-10 02:29:36,703 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4973 bytes | Attempt: 1 | | Invoice 44/234 |
+2026-01-10 02:29:36,730 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 214846 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:36,731 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:37,363 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277714e447a784a514451566b4c50774a62496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d546731496c303d00f07fffffcdf07fffffcd00c524f83dbba927558f33e57c3e639bbc0042 | Status: 200 | Response size: 212221 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:38,474 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364e6144754a51445156634950774a62496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d544d31496c303d00f07fffff9bf07fffff9b005249c3d114b08756e1b3c62299c437460042 | Status: 200 | Response size: 214289 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:38,867 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364b6a64725a51445156554650774662496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694f44556958513d3d00f07fffff69f07fffff690095111e495d4cfa9434ff284d60eb2e5b0042 | Status: 200 | Response size: 213109 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:39,220 - backend_.backend_service - INFO -  Fetching invoices with state=004d001040416f5277364f4f6a6e70514451564d4350774662496a41784d44597a4e7a51334d7a55694c43497849697769517a493156453145496977694d7a556958513d3d00f07fffff37f07fffff37007cf7e2b8fdc61837ceefa07ea9d66c940042 | Status: 200 | Response size: 145212 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:39,966 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:39,968 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 01/01/2025 to 28/01/2025
+2026-01-10 02:29:40,157 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7186 bytes | Attempt: 1 | | Invoice 45/234 |
+2026-01-10 02:29:40,171 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 45 bytes | Period: 29/01/2025 to 31/01/2025
+2026-01-10 02:29:40,171 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 29/01/2025 to 31/01/2025
+2026-01-10 02:29:40,449 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6211 bytes | Attempt: 1 | | Invoice 46/234 |
+2026-01-10 02:29:40,480 - backend_.backend_service - INFO -  Fetching invoices (initial) | Type: sold | Status: 200 | Response size: 46 bytes | Period: 29/01/2025 to 31/01/2025
+2026-01-10 02:29:40,481 - backend_.backend_service - INFO -  Successfully fetched invoices for period: 29/01/2025 to 31/01/2025
+2026-01-10 02:29:40,916 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4928 bytes | Attempt: 1 | | Invoice 47/234 |
+2026-01-10 02:29:41,164 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4982 bytes | Attempt: 1 | | Invoice 2/234 |
+2026-01-10 02:29:41,198 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6186 bytes | Attempt: 1 | | Invoice 48/234 |
+2026-01-10 02:29:45,189 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6672 bytes | Attempt: 1 | | Invoice 49/234 |
+2026-01-10 02:29:45,236 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 12183 bytes | Attempt: 1 | | Invoice 3/234 |
+2026-01-10 02:29:45,615 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7186 bytes | Attempt: 1 | | Invoice 4/234 |
+2026-01-10 02:29:45,887 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 1 | | Invoice 5/234 |
+2026-01-10 02:29:49,628 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5085 bytes | Attempt: 1 | | Invoice 50/234 |
+2026-01-10 02:29:49,888 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5085 bytes | Attempt: 1 | | Invoice 51/234 |
+2026-01-10 02:29:50,426 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6529 bytes | Attempt: 1 | | Invoice 6/234 |
+2026-01-10 02:29:51,134 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5056 bytes | Attempt: 1 | | Invoice 7/234 |
+2026-01-10 02:29:51,395 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7227 bytes | Attempt: 1 | | Invoice 8/234 |
+2026-01-10 02:29:51,663 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7220 bytes | Attempt: 1 | | Invoice 9/234 |
+2026-01-10 02:29:52,221 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6148 bytes | Attempt: 1 | | Invoice 10/234 |
+2026-01-10 02:29:54,011 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4865 bytes | Attempt: 1 | | Invoice 52/234 |
+2026-01-10 02:29:54,238 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4884 bytes | Attempt: 1 | | Invoice 53/234 |
+2026-01-10 02:29:56,468 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7802 bytes | Attempt: 1 | | Invoice 11/234 |
+2026-01-10 02:29:56,741 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5550 bytes | Attempt: 1 | | Invoice 12/234 |
+2026-01-10 02:29:57,030 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5453 bytes | Attempt: 1 | | Invoice 13/234 |
+2026-01-10 02:29:57,304 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4850 bytes | Attempt: 1 | | Invoice 14/234 |
+2026-01-10 02:29:57,831 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4887 bytes | Attempt: 1 | | Invoice 15/234 |
+2026-01-10 02:29:58,361 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4860 bytes | Attempt: 1 | | Invoice 54/234 |
+2026-01-10 02:29:58,645 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6511 bytes | Attempt: 1 | | Invoice 55/234 |
+2026-01-10 02:29:58,880 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4890 bytes | Attempt: 1 | | Invoice 56/234 |
+2026-01-10 02:29:59,136 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8796 bytes | Attempt: 1 | | Invoice 57/234 |
+2026-01-10 02:30:02,363 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5441 bytes | Attempt: 1 | | Invoice 16/234 |
+2026-01-10 02:30:02,749 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7070 bytes | Attempt: 1 | | Invoice 17/234 |
+2026-01-10 02:30:02,966 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5460 bytes | Attempt: 1 | | Invoice 18/234 |
+2026-01-10 02:30:03,382 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4898 bytes | Attempt: 1 | | Invoice 19/234 |
+2026-01-10 02:30:03,393 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4838 bytes | Attempt: 1 | | Invoice 58/234 |
+2026-01-10 02:30:03,556 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-216 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:07,038 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4868 bytes | Attempt: 2 | | Invoice 20/234 |
+2026-01-10 02:30:07,096 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 29357 bytes | Attempt: 1 | | Invoice 59/234 |
+2026-01-10 02:30:07,499 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6652 bytes | Attempt: 1 | | Invoice 60/234 |
+2026-01-10 02:30:07,741 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6636 bytes | Attempt: 1 | | Invoice 61/234 |
+2026-01-10 02:30:08,023 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5007 bytes | Attempt: 1 | | Invoice 62/234 |
+2026-01-10 02:30:08,168 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-173 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:11,198 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4900 bytes | Attempt: 1 | | Invoice 21/234 |
+2026-01-10 02:30:12,234 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7131 bytes | Attempt: 2 | | Invoice 63/234 |
+2026-01-10 02:30:15,298 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4917 bytes | Attempt: 1 | | Invoice 22/234 |
+2026-01-10 02:30:15,735 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5463 bytes | Attempt: 1 | | Invoice 23/234 |
+2026-01-10 02:30:16,138 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7084 bytes | Attempt: 1 | | Invoice 24/234 |
+2026-01-10 02:30:16,370 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6049 bytes | Attempt: 1 | | Invoice 64/234 |
+2026-01-10 02:30:16,437 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5600 bytes | Attempt: 1 | | Invoice 25/234 |
+2026-01-10 02:30:16,537 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-171 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:16,715 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-171 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:16,888 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-171 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:17,044 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-171 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:17,203 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-171 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:19,998 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7155 bytes | Attempt: 1 | | Invoice 26/234 |
+2026-01-10 02:30:21,320 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6653 bytes | Attempt: 6 | | Invoice 65/234 |
+2026-01-10 02:30:21,639 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4857 bytes | Attempt: 1 | | Invoice 66/234 |
+2026-01-10 02:30:21,949 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6095 bytes | Attempt: 1 | | Invoice 67/234 |
+2026-01-10 02:30:22,248 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4866 bytes | Attempt: 1 | | Invoice 68/234 |
+2026-01-10 02:30:24,222 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 20474 bytes | Attempt: 1 | | Invoice 27/234 |
+2026-01-10 02:30:24,504 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4906 bytes | Attempt: 1 | | Invoice 28/234 |
+2026-01-10 02:30:24,741 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6595 bytes | Attempt: 1 | | Invoice 29/234 |
+2026-01-10 02:30:24,974 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4893 bytes | Attempt: 1 | | Invoice 30/234 |
+2026-01-10 02:30:25,206 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6623 bytes | Attempt: 1 | | Invoice 31/234 |
+2026-01-10 02:30:25,354 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-204 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:25,502 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-204 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:26,278 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4899 bytes | Attempt: 1 | | Invoice 69/234 |
+2026-01-10 02:30:29,498 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 13335 bytes | Attempt: 3 | | Invoice 32/234 |
+2026-01-10 02:30:30,413 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5446 bytes | Attempt: 1 | | Invoice 70/234 |
+2026-01-10 02:30:30,667 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4888 bytes | Attempt: 1 | | Invoice 71/234 |
+2026-01-10 02:30:30,927 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4875 bytes | Attempt: 1 | | Invoice 72/234 |
+2026-01-10 02:30:31,233 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23233 bytes | Attempt: 1 | | Invoice 73/234 |
+2026-01-10 02:30:33,035 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23726 bytes | Attempt: 1 | | Invoice 33/234 |
+2026-01-10 02:30:33,301 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4980 bytes | Attempt: 1 | | Invoice 34/234 |
+2026-01-10 02:30:33,582 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4983 bytes | Attempt: 1 | | Invoice 35/234 |
+2026-01-10 02:30:33,798 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5586 bytes | Attempt: 1 | | Invoice 36/234 |
+2026-01-10 02:30:34,053 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7186 bytes | Attempt: 1 | | Invoice 37/234 |
+2026-01-10 02:30:35,318 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 24890 bytes | Attempt: 1 | | Invoice 74/234 |
+2026-01-10 02:30:38,160 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 1 | | Invoice 38/234 |
+2026-01-10 02:30:38,447 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6651 bytes | Attempt: 1 | | Invoice 39/234 |
+2026-01-10 02:30:38,700 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4975 bytes | Attempt: 1 | | Invoice 40/234 |
+2026-01-10 02:30:38,967 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4973 bytes | Attempt: 1 | | Invoice 41/234 |
+2026-01-10 02:30:39,237 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6055 bytes | Attempt: 1 | | Invoice 75/234 |
+2026-01-10 02:30:39,403 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-160 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:39,563 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-160 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:39,957 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5013 bytes | Attempt: 3 | | Invoice 76/234 |
+2026-01-10 02:30:43,415 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 1 | | Invoice 42/234 |
+2026-01-10 02:30:43,633 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7197 bytes | Attempt: 1 | | Invoice 43/234 |
+2026-01-10 02:30:43,867 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4973 bytes | Attempt: 1 | | Invoice 44/234 |
+2026-01-10 02:30:44,479 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5408 bytes | Attempt: 1 | | Invoice 77/234 |
+2026-01-10 02:30:48,436 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7186 bytes | Attempt: 1 | | Invoice 45/234 |
+2026-01-10 02:30:48,519 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 40178 bytes | Attempt: 1 | | Invoice 78/234 |
+2026-01-10 02:30:48,753 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6211 bytes | Attempt: 1 | | Invoice 46/234 |
+2026-01-10 02:30:48,970 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5509 bytes | Attempt: 1 | | Invoice 79/234 |
+2026-01-10 02:30:49,081 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4928 bytes | Attempt: 1 | | Invoice 47/234 |
+2026-01-10 02:30:49,148 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-156 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:49,298 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-156 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:53,255 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4852 bytes | Attempt: 3 | | Invoice 80/234 |
+2026-01-10 02:30:53,269 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6186 bytes | Attempt: 1 | | Invoice 48/234 |
+2026-01-10 02:30:53,572 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6672 bytes | Attempt: 1 | | Invoice 49/234 |
+2026-01-10 02:30:53,835 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8905 bytes | Attempt: 1 | | Invoice 81/234 |
+2026-01-10 02:30:53,989 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-154 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:54,280 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5085 bytes | Attempt: 1 | | Invoice 50/234 |
+2026-01-10 02:30:54,453 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-185 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:54,628 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-185 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:30:57,942 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5085 bytes | Attempt: 3 | | Invoice 51/234 |
+2026-01-10 02:30:57,949 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4912 bytes | Attempt: 2 | | Invoice 82/234 |
+2026-01-10 02:30:58,258 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4852 bytes | Attempt: 1 | | Invoice 83/234 |
+2026-01-10 02:30:58,731 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5478 bytes | Attempt: 1 | | Invoice 84/234 |
+2026-01-10 02:30:59,523 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 14876 bytes | Attempt: 1 | | Invoice 85/234 |
+2026-01-10 02:30:59,694 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-150 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:00,012 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 35584 bytes | Attempt: 2 | | Invoice 86/234 |
+2026-01-10 02:31:00,507 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 37710 bytes | Attempt: 1 | | Invoice 87/234 |
+2026-01-10 02:31:00,804 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5980 bytes | Attempt: 1 | | Invoice 88/234 |
+2026-01-10 02:31:01,083 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5426 bytes | Attempt: 1 | | Invoice 89/234 |
+2026-01-10 02:31:01,296 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4880 bytes | Attempt: 1 | | Invoice 90/234 |
+2026-01-10 02:31:01,438 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-145 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:02,053 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4865 bytes | Attempt: 1 | | Invoice 52/234 |
+2026-01-10 02:31:05,205 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6721 bytes | Attempt: 2 | | Invoice 91/234 |
+2026-01-10 02:31:05,704 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23705 bytes | Attempt: 1 | | Invoice 92/234 |
+2026-01-10 02:31:06,257 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4884 bytes | Attempt: 1 | | Invoice 53/234 |
+2026-01-10 02:31:10,404 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4860 bytes | Attempt: 1 | | Invoice 54/234 |
+2026-01-10 02:31:10,481 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6678 bytes | Attempt: 1 | | Invoice 93/234 |
+2026-01-10 02:31:10,703 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6511 bytes | Attempt: 1 | | Invoice 55/234 |
+2026-01-10 02:31:14,013 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4890 bytes | Attempt: 1 | | Invoice 56/234 |
+2026-01-10 02:31:14,015 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6090 bytes | Attempt: 1 | | Invoice 94/234 |
+2026-01-10 02:31:14,271 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8796 bytes | Attempt: 1 | | Invoice 57/234 |
+2026-01-10 02:31:14,553 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4838 bytes | Attempt: 1 | | Invoice 58/234 |
+2026-01-10 02:31:18,209 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5551 bytes | Attempt: 1 | | Invoice 95/234 |
+2026-01-10 02:31:18,244 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 29357 bytes | Attempt: 1 | | Invoice 59/234 |
+2026-01-10 02:31:18,665 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7057 bytes | Attempt: 1 | | Invoice 96/234 |
+2026-01-10 02:31:18,683 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6652 bytes | Attempt: 1 | | Invoice 60/234 |
+2026-01-10 02:31:18,931 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4847 bytes | Attempt: 1 | | Invoice 97/234 |
+2026-01-10 02:31:22,332 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6636 bytes | Attempt: 1 | | Invoice 61/234 |
+2026-01-10 02:31:22,565 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5007 bytes | Attempt: 1 | | Invoice 62/234 |
+2026-01-10 02:31:22,807 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7131 bytes | Attempt: 1 | | Invoice 63/234 |
+2026-01-10 02:31:23,041 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6049 bytes | Attempt: 1 | | Invoice 64/234 |
+2026-01-10 02:31:23,276 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-138 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:23,387 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6653 bytes | Attempt: 1 | | Invoice 65/234 |
+2026-01-10 02:31:23,408 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-138 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:23,539 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-170 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:23,700 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-170 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:23,842 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-170 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:27,032 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4904 bytes | Attempt: 3 | | Invoice 98/234 |
+2026-01-10 02:31:27,264 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6006 bytes | Attempt: 1 | | Invoice 99/234 |
+2026-01-10 02:31:27,486 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4850 bytes | Attempt: 1 | | Invoice 100/234 |
+2026-01-10 02:31:27,730 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4864 bytes | Attempt: 1 | | Invoice 101/234 |
+2026-01-10 02:31:27,947 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-170 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,025 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4868 bytes | Attempt: 1 | | Invoice 102/234 |
+2026-01-10 02:31:28,160 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-170 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,238 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,336 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-170 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,424 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,572 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,729 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:28,866 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:29,004 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:32,208 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4857 bytes | Attempt: 7 | | Invoice 66/234 |
+2026-01-10 02:31:32,472 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6095 bytes | Attempt: 1 | | Invoice 67/234 |
+2026-01-10 02:31:32,706 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4866 bytes | Attempt: 1 | | Invoice 68/234 |
+2026-01-10 02:31:32,927 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4899 bytes | Attempt: 1 | | Invoice 69/234 |
+2026-01-10 02:31:33,146 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:33,156 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5446 bytes | Attempt: 1 | | Invoice 70/234 |
+2026-01-10 02:31:33,298 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-165 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:33,304 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:33,449 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-165 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:33,474 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-133 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:37,393 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4888 bytes | Attempt: 3 | | Invoice 71/234 |
+2026-01-10 02:31:37,554 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6090 bytes | Attempt: 10 | | Invoice 103/234 |
+2026-01-10 02:31:37,820 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7236 bytes | Attempt: 1 | | Invoice 104/234 |
+2026-01-10 02:31:41,001 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4875 bytes | Attempt: 1 | | Invoice 72/234 |
+2026-01-10 02:31:41,266 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23233 bytes | Attempt: 1 | | Invoice 73/234 |
+2026-01-10 02:31:41,627 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 24890 bytes | Attempt: 1 | | Invoice 74/234 |
+2026-01-10 02:31:42,033 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7203 bytes | Attempt: 1 | | Invoice 105/234 |
+2026-01-10 02:31:42,352 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5594 bytes | Attempt: 1 | | Invoice 106/234 |
+2026-01-10 02:31:42,549 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-129 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:45,187 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6055 bytes | Attempt: 1 | | Invoice 75/234 |
+2026-01-10 02:31:45,499 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5013 bytes | Attempt: 1 | | Invoice 76/234 |
+2026-01-10 02:31:46,191 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4960 bytes | Attempt: 2 | | Invoice 107/234 |
+2026-01-10 02:31:46,444 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4917 bytes | Attempt: 1 | | Invoice 108/234 |
+2026-01-10 02:31:47,231 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4856 bytes | Attempt: 1 | | Invoice 109/234 |
+2026-01-10 02:31:49,355 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5408 bytes | Attempt: 1 | | Invoice 77/234 |
+2026-01-10 02:31:49,675 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 40178 bytes | Attempt: 1 | | Invoice 78/234 |
+2026-01-10 02:31:49,963 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5509 bytes | Attempt: 1 | | Invoice 79/234 |
+2026-01-10 02:31:50,238 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4852 bytes | Attempt: 1 | | Invoice 80/234 |
+2026-01-10 02:31:50,548 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8905 bytes | Attempt: 1 | | Invoice 81/234 |
+2026-01-10 02:31:51,392 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6512 bytes | Attempt: 1 | | Invoice 110/234 |
+2026-01-10 02:31:54,048 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4912 bytes | Attempt: 1 | | Invoice 82/234 |
+2026-01-10 02:31:55,124 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23206 bytes | Attempt: 1 | | Invoice 111/234 |
+2026-01-10 02:31:58,193 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4852 bytes | Attempt: 1 | | Invoice 83/234 |
+2026-01-10 02:31:58,483 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5478 bytes | Attempt: 1 | | Invoice 84/234 |
+2026-01-10 02:31:58,921 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 14876 bytes | Attempt: 1 | | Invoice 85/234 |
+2026-01-10 02:31:59,210 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 35584 bytes | Attempt: 1 | | Invoice 86/234 |
+2026-01-10 02:31:59,241 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4843 bytes | Attempt: 1 | | Invoice 112/234 |
+2026-01-10 02:31:59,370 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-149 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:59,391 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-123 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:31:59,518 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-149 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:03,442 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 27187 bytes | Attempt: 2 | | Invoice 113/234 |
+2026-01-10 02:32:03,483 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 37710 bytes | Attempt: 3 | | Invoice 87/234 |
+2026-01-10 02:32:03,751 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 10427 bytes | Attempt: 1 | | Invoice 114/234 |
+2026-01-10 02:32:03,976 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 13848 bytes | Attempt: 1 | | Invoice 115/234 |
+2026-01-10 02:32:07,034 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5980 bytes | Attempt: 1 | | Invoice 88/234 |
+2026-01-10 02:32:07,242 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5426 bytes | Attempt: 1 | | Invoice 89/234 |
+2026-01-10 02:32:07,519 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4880 bytes | Attempt: 1 | | Invoice 90/234 |
+2026-01-10 02:32:08,087 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 11084 bytes | Attempt: 1 | | Invoice 116/234 |
+2026-01-10 02:32:11,187 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6721 bytes | Attempt: 1 | | Invoice 91/234 |
+2026-01-10 02:32:11,566 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23705 bytes | Attempt: 1 | | Invoice 92/234 |
+2026-01-10 02:32:11,830 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6678 bytes | Attempt: 1 | | Invoice 93/234 |
+2026-01-10 02:32:12,203 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4853 bytes | Attempt: 1 | | Invoice 117/234 |
+2026-01-10 02:32:16,399 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6090 bytes | Attempt: 1 | | Invoice 94/234 |
+2026-01-10 02:32:16,641 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5488 bytes | Attempt: 1 | | Invoice 118/234 |
+2026-01-10 02:32:17,123 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4893 bytes | Attempt: 1 | | Invoice 119/234 |
+2026-01-10 02:32:17,336 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4855 bytes | Attempt: 1 | | Invoice 120/234 |
+2026-01-10 02:32:17,604 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4938 bytes | Attempt: 1 | | Invoice 121/234 |
+2026-01-10 02:32:17,866 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7200 bytes | Attempt: 1 | | Invoice 122/234 |
+2026-01-10 02:32:18,115 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4977 bytes | Attempt: 1 | | Invoice 123/234 |
+2026-01-10 02:32:18,248 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:20,047 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5551 bytes | Attempt: 1 | | Invoice 95/234 |
+2026-01-10 02:32:20,296 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7057 bytes | Attempt: 1 | | Invoice 96/234 |
+2026-01-10 02:32:20,978 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4847 bytes | Attempt: 1 | | Invoice 97/234 |
+2026-01-10 02:32:21,220 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4904 bytes | Attempt: 1 | | Invoice 98/234 |
+2026-01-10 02:32:21,514 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6006 bytes | Attempt: 1 | | Invoice 99/234 |
+2026-01-10 02:32:22,305 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 2 | | Invoice 124/234 |
+2026-01-10 02:32:22,585 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5538 bytes | Attempt: 1 | | Invoice 125/234 |
+2026-01-10 02:32:25,193 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4850 bytes | Attempt: 1 | | Invoice 100/234 |
+2026-01-10 02:32:25,444 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4864 bytes | Attempt: 1 | | Invoice 101/234 |
+2026-01-10 02:32:25,696 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4868 bytes | Attempt: 1 | | Invoice 102/234 |
+2026-01-10 02:32:25,954 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6090 bytes | Attempt: 1 | | Invoice 103/234 |
+2026-01-10 02:32:26,156 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-110 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:26,203 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7236 bytes | Attempt: 1 | | Invoice 104/234 |
+2026-01-10 02:32:26,309 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-110 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:30,439 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7203 bytes | Attempt: 1 | | Invoice 105/234 |
+2026-01-10 02:32:30,578 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4996 bytes | Attempt: 3 | | Invoice 126/234 |
+2026-01-10 02:32:30,724 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5594 bytes | Attempt: 1 | | Invoice 106/234 |
+2026-01-10 02:32:30,864 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5006 bytes | Attempt: 1 | | Invoice 127/234 |
+2026-01-10 02:32:31,035 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-108 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:31,045 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4960 bytes | Attempt: 1 | | Invoice 107/234 |
+2026-01-10 02:32:31,176 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-108 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:31,201 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-128 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:31,342 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-108 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:31,349 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-128 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:31,511 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-128 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:35,069 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4917 bytes | Attempt: 4 | | Invoice 108/234 |
+2026-01-10 02:32:35,082 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5035 bytes | Attempt: 4 | | Invoice 128/234 |
+2026-01-10 02:32:39,462 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4856 bytes | Attempt: 1 | | Invoice 109/234 |
+2026-01-10 02:32:39,469 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6709 bytes | Attempt: 1 | | Invoice 129/234 |
+2026-01-10 02:32:39,742 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6512 bytes | Attempt: 1 | | Invoice 110/234 |
+2026-01-10 02:32:43,393 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8889 bytes | Attempt: 1 | | Invoice 130/234 |
+2026-01-10 02:32:43,610 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4940 bytes | Attempt: 1 | | Invoice 131/234 |
+2026-01-10 02:32:43,879 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6629 bytes | Attempt: 1 | | Invoice 132/234 |
+2026-01-10 02:32:44,112 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4842 bytes | Attempt: 1 | | Invoice 133/234 |
+2026-01-10 02:32:44,326 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-125 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:44,408 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23763 bytes | Attempt: 1 | | Invoice 134/234 |
+2026-01-10 02:32:44,464 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-125 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:44,570 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-101 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:44,616 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-125 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:44,768 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-125 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:44,969 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-125 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:45,123 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-125 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:48,082 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6083 bytes | Attempt: 2 | | Invoice 135/234 |
+2026-01-10 02:32:48,339 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7747 bytes | Attempt: 1 | | Invoice 136/234 |
+2026-01-10 02:32:48,617 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5490 bytes | Attempt: 1 | | Invoice 137/234 |
+2026-01-10 02:32:49,114 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23206 bytes | Attempt: 7 | | Invoice 111/234 |
+2026-01-10 02:32:49,540 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4843 bytes | Attempt: 1 | | Invoice 112/234 |
+2026-01-10 02:32:52,295 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4970 bytes | Attempt: 1 | | Invoice 138/234 |
+2026-01-10 02:32:52,625 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4917 bytes | Attempt: 1 | | Invoice 139/234 |
+2026-01-10 02:32:52,870 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6643 bytes | Attempt: 1 | | Invoice 140/234 |
+2026-01-10 02:32:53,132 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6089 bytes | Attempt: 1 | | Invoice 141/234 |
+2026-01-10 02:32:53,278 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-94 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:53,307 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 27187 bytes | Attempt: 1 | | Invoice 113/234 |
+2026-01-10 02:32:53,512 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-122 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:53,674 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-122 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:53,816 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-122 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:53,985 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-122 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:32:57,439 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6636 bytes | Attempt: 2 | | Invoice 142/234 |
+2026-01-10 02:32:57,922 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 10427 bytes | Attempt: 5 | | Invoice 114/234 |
+2026-01-10 02:32:58,209 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 13848 bytes | Attempt: 1 | | Invoice 115/234 |
+2026-01-10 02:32:58,477 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 11084 bytes | Attempt: 1 | | Invoice 116/234 |
+2026-01-10 02:33:01,079 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6628 bytes | Attempt: 1 | | Invoice 143/234 |
+2026-01-10 02:33:01,335 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6638 bytes | Attempt: 1 | | Invoice 144/234 |
+2026-01-10 02:33:01,603 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6075 bytes | Attempt: 1 | | Invoice 145/234 |
+2026-01-10 02:33:01,893 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6628 bytes | Attempt: 1 | | Invoice 146/234 |
+2026-01-10 02:33:02,034 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-89 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:02,081 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4853 bytes | Attempt: 1 | | Invoice 117/234 |
+2026-01-10 02:33:02,205 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-89 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:02,228 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-118 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:02,398 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-118 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:02,567 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-118 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:02,783 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-118 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:02,969 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-118 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:06,238 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6643 bytes | Attempt: 3 | | Invoice 147/234 |
+2026-01-10 02:33:06,666 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6098 bytes | Attempt: 1 | | Invoice 148/234 |
+2026-01-10 02:33:06,893 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 16112 bytes | Attempt: 1 | | Invoice 149/234 |
+2026-01-10 02:33:07,211 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 19972 bytes | Attempt: 1 | | Invoice 150/234 |
+2026-01-10 02:33:07,288 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5488 bytes | Attempt: 6 | | Invoice 118/234 |
+2026-01-10 02:33:07,381 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-85 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:07,456 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-117 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:07,606 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-117 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:07,784 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-117 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:07,931 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-117 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:11,010 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23764 bytes | Attempt: 2 | | Invoice 151/234 |
+2026-01-10 02:33:12,222 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4893 bytes | Attempt: 5 | | Invoice 119/234 |
+2026-01-10 02:33:12,466 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4855 bytes | Attempt: 1 | | Invoice 120/234 |
+2026-01-10 02:33:12,713 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4938 bytes | Attempt: 1 | | Invoice 121/234 |
+2026-01-10 02:33:12,987 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7200 bytes | Attempt: 1 | | Invoice 122/234 |
+2026-01-10 02:33:13,238 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4977 bytes | Attempt: 1 | | Invoice 123/234 |
+2026-01-10 02:33:13,393 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:13,536 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:13,685 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:13,870 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:14,022 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:14,205 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:14,388 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-112 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:15,220 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5434 bytes | Attempt: 1 | | Invoice 152/234 |
+2026-01-10 02:33:18,256 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4961 bytes | Attempt: 8 | | Invoice 124/234 |
+2026-01-10 02:33:18,621 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5538 bytes | Attempt: 1 | | Invoice 125/234 |
+2026-01-10 02:33:19,489 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4871 bytes | Attempt: 1 | | Invoice 153/234 |
+2026-01-10 02:33:19,714 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4852 bytes | Attempt: 1 | | Invoice 154/234 |
+2026-01-10 02:33:19,966 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4912 bytes | Attempt: 1 | | Invoice 155/234 |
+2026-01-10 02:33:20,199 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6623 bytes | Attempt: 1 | | Invoice 156/234 |
+2026-01-10 02:33:20,586 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6057 bytes | Attempt: 1 | | Invoice 157/234 |
+2026-01-10 02:33:22,365 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4996 bytes | Attempt: 1 | | Invoice 126/234 |
+2026-01-10 02:33:23,970 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4938 bytes | Attempt: 1 | | Invoice 158/234 |
+2026-01-10 02:33:26,015 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5006 bytes | Attempt: 1 | | Invoice 127/234 |
+2026-01-10 02:33:26,290 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5035 bytes | Attempt: 1 | | Invoice 128/234 |
+2026-01-10 02:33:28,067 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6662 bytes | Attempt: 1 | | Invoice 159/234 |
+2026-01-10 02:33:30,509 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6709 bytes | Attempt: 1 | | Invoice 129/234 |
+2026-01-10 02:33:30,772 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8889 bytes | Attempt: 1 | | Invoice 130/234 |
+2026-01-10 02:33:31,072 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4940 bytes | Attempt: 1 | | Invoice 131/234 |
+2026-01-10 02:33:31,300 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6629 bytes | Attempt: 1 | | Invoice 132/234 |
+2026-01-10 02:33:32,277 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5015 bytes | Attempt: 1 | | Invoice 160/234 |
+2026-01-10 02:33:32,555 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6043 bytes | Attempt: 1 | | Invoice 161/234 |
+2026-01-10 02:33:32,963 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8873 bytes | Attempt: 1 | | Invoice 162/234 |
+2026-01-10 02:33:33,225 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6090 bytes | Attempt: 1 | | Invoice 163/234 |
+2026-01-10 02:33:33,526 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 28755 bytes | Attempt: 1 | | Invoice 164/234 |
+2026-01-10 02:33:33,674 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-71 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:33,943 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4840 bytes | Attempt: 2 | | Invoice 165/234 |
+2026-01-10 02:33:35,369 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4842 bytes | Attempt: 1 | | Invoice 133/234 |
+2026-01-10 02:33:37,972 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5492 bytes | Attempt: 1 | | Invoice 166/234 |
+2026-01-10 02:33:39,107 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23763 bytes | Attempt: 1 | | Invoice 134/234 |
+2026-01-10 02:33:39,354 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6083 bytes | Attempt: 1 | | Invoice 135/234 |
+2026-01-10 02:33:39,611 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7747 bytes | Attempt: 1 | | Invoice 136/234 |
+2026-01-10 02:33:42,139 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6065 bytes | Attempt: 1 | | Invoice 167/234 |
+2026-01-10 02:33:43,124 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5490 bytes | Attempt: 1 | | Invoice 137/234 |
+2026-01-10 02:33:43,415 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4970 bytes | Attempt: 1 | | Invoice 138/234 |
+2026-01-10 02:33:46,640 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 28749 bytes | Attempt: 1 | | Invoice 168/234 |
+2026-01-10 02:33:47,329 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4917 bytes | Attempt: 1 | | Invoice 139/234 |
+2026-01-10 02:33:47,647 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6643 bytes | Attempt: 1 | | Invoice 140/234 |
+2026-01-10 02:33:50,442 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5434 bytes | Attempt: 1 | | Invoice 169/234 |
+2026-01-10 02:33:50,714 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6057 bytes | Attempt: 1 | | Invoice 170/234 |
+2026-01-10 02:33:50,952 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7173 bytes | Attempt: 1 | | Invoice 171/234 |
+2026-01-10 02:33:50,957 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6089 bytes | Attempt: 1 | | Invoice 141/234 |
+2026-01-10 02:33:51,224 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6636 bytes | Attempt: 1 | | Invoice 142/234 |
+2026-01-10 02:33:51,381 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-93 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:51,554 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-93 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:51,714 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-93 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:33:55,081 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4892 bytes | Attempt: 1 | | Invoice 172/234 |
+2026-01-10 02:33:55,113 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6628 bytes | Attempt: 4 | | Invoice 143/234 |
+2026-01-10 02:33:55,383 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6638 bytes | Attempt: 1 | | Invoice 144/234 |
+2026-01-10 02:33:59,309 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5422 bytes | Attempt: 1 | | Invoice 173/234 |
+2026-01-10 02:33:59,504 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6075 bytes | Attempt: 1 | | Invoice 145/234 |
+2026-01-10 02:33:59,573 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5467 bytes | Attempt: 1 | | Invoice 174/234 |
+2026-01-10 02:33:59,773 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6628 bytes | Attempt: 1 | | Invoice 146/234 |
+2026-01-10 02:33:59,822 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6143 bytes | Attempt: 1 | | Invoice 175/234 |
+2026-01-10 02:33:59,968 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:00,147 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:00,300 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:00,473 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:00,636 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:00,839 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:01,022 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:04,022 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6643 bytes | Attempt: 1 | | Invoice 147/234 |
+2026-01-10 02:34:04,676 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6098 bytes | Attempt: 1 | | Invoice 148/234 |
+2026-01-10 02:34:04,939 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 16112 bytes | Attempt: 1 | | Invoice 149/234 |
+2026-01-10 02:34:04,993 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6061 bytes | Attempt: 8 | | Invoice 176/234 |
+2026-01-10 02:34:05,145 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-59 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:05,273 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 19972 bytes | Attempt: 1 | | Invoice 150/234 |
+2026-01-10 02:34:05,338 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-59 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:05,452 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-85 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:05,647 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-85 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:09,095 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6076 bytes | Attempt: 3 | | Invoice 177/234 |
+2026-01-10 02:34:09,310 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6613 bytes | Attempt: 1 | | Invoice 178/234 |
+2026-01-10 02:34:09,397 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23764 bytes | Attempt: 3 | | Invoice 151/234 |
+2026-01-10 02:34:09,627 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5434 bytes | Attempt: 1 | | Invoice 152/234 |
+2026-01-10 02:34:09,889 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4871 bytes | Attempt: 1 | | Invoice 153/234 |
+2026-01-10 02:34:10,032 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-82 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:13,302 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4862 bytes | Attempt: 1 | | Invoice 179/234 |
+2026-01-10 02:34:13,620 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5415 bytes | Attempt: 1 | | Invoice 180/234 |
+2026-01-10 02:34:13,867 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5533 bytes | Attempt: 1 | | Invoice 181/234 |
+2026-01-10 02:34:14,301 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4852 bytes | Attempt: 2 | | Invoice 154/234 |
+2026-01-10 02:34:14,613 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4912 bytes | Attempt: 1 | | Invoice 155/234 |
+2026-01-10 02:34:14,910 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6623 bytes | Attempt: 1 | | Invoice 156/234 |
+2026-01-10 02:34:15,192 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6057 bytes | Attempt: 1 | | Invoice 157/234 |
+2026-01-10 02:34:17,948 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7432 bytes | Attempt: 1 | | Invoice 182/234 |
+2026-01-10 02:34:19,027 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4938 bytes | Attempt: 1 | | Invoice 158/234 |
+2026-01-10 02:34:19,297 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6662 bytes | Attempt: 1 | | Invoice 159/234 |
+2026-01-10 02:34:19,577 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5015 bytes | Attempt: 1 | | Invoice 160/234 |
+2026-01-10 02:34:22,616 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4859 bytes | Attempt: 1 | | Invoice 183/234 |
+2026-01-10 02:34:22,888 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4876 bytes | Attempt: 1 | | Invoice 184/234 |
+2026-01-10 02:34:23,154 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6043 bytes | Attempt: 1 | | Invoice 161/234 |
+2026-01-10 02:34:23,380 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8873 bytes | Attempt: 1 | | Invoice 162/234 |
+2026-01-10 02:34:23,659 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6090 bytes | Attempt: 1 | | Invoice 163/234 |
+2026-01-10 02:34:23,933 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 28755 bytes | Attempt: 1 | | Invoice 164/234 |
+2026-01-10 02:34:24,129 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-71 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:27,309 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7738 bytes | Attempt: 1 | | Invoice 185/234 |
+2026-01-10 02:34:28,372 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4840 bytes | Attempt: 2 | | Invoice 165/234 |
+2026-01-10 02:34:28,672 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5492 bytes | Attempt: 1 | | Invoice 166/234 |
+2026-01-10 02:34:30,954 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4888 bytes | Attempt: 1 | | Invoice 186/234 |
+2026-01-10 02:34:31,999 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6065 bytes | Attempt: 1 | | Invoice 167/234 |
+2026-01-10 02:34:35,105 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6563 bytes | Attempt: 1 | | Invoice 187/234 |
+2026-01-10 02:34:35,479 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 25441 bytes | Attempt: 1 | | Invoice 188/234 |
+2026-01-10 02:34:35,737 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5462 bytes | Attempt: 1 | | Invoice 189/234 |
+2026-01-10 02:34:36,010 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6190 bytes | Attempt: 1 | | Invoice 190/234 |
+2026-01-10 02:34:36,156 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-45 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:36,199 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 28749 bytes | Attempt: 1 | | Invoice 168/234 |
+2026-01-10 02:34:40,317 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5013 bytes | Attempt: 2 | | Invoice 191/234 |
+2026-01-10 02:34:40,327 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5434 bytes | Attempt: 1 | | Invoice 169/234 |
+2026-01-10 02:34:43,956 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6057 bytes | Attempt: 1 | | Invoice 170/234 |
+2026-01-10 02:34:44,064 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6680 bytes | Attempt: 1 | | Invoice 192/234 |
+2026-01-10 02:34:44,230 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7173 bytes | Attempt: 1 | | Invoice 171/234 |
+2026-01-10 02:34:44,308 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4903 bytes | Attempt: 1 | | Invoice 193/234 |
+2026-01-10 02:34:44,617 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4854 bytes | Attempt: 1 | | Invoice 194/234 |
+2026-01-10 02:34:44,760 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-41 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:44,922 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-41 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:48,163 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4892 bytes | Attempt: 1 | | Invoice 172/234 |
+2026-01-10 02:34:48,418 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5422 bytes | Attempt: 1 | | Invoice 173/234 |
+2026-01-10 02:34:48,686 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5467 bytes | Attempt: 1 | | Invoice 174/234 |
+2026-01-10 02:34:48,905 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6143 bytes | Attempt: 1 | | Invoice 175/234 |
+2026-01-10 02:34:49,069 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,158 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4859 bytes | Attempt: 3 | | Invoice 195/234 |
+2026-01-10 02:34:49,237 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,347 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,426 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,598 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,669 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,813 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:49,999 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-60 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:34:53,392 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4842 bytes | Attempt: 3 | | Invoice 196/234 |
+2026-01-10 02:34:54,362 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6061 bytes | Attempt: 7 | | Invoice 176/234 |
+2026-01-10 02:34:54,632 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6076 bytes | Attempt: 1 | | Invoice 177/234 |
+2026-01-10 02:34:54,919 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6613 bytes | Attempt: 1 | | Invoice 178/234 |
+2026-01-10 02:34:55,510 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4862 bytes | Attempt: 1 | | Invoice 179/234 |
+2026-01-10 02:34:55,726 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5415 bytes | Attempt: 1 | | Invoice 180/234 |
+2026-01-10 02:34:56,947 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4889 bytes | Attempt: 1 | | Invoice 197/234 |
+2026-01-10 02:34:59,148 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5533 bytes | Attempt: 1 | | Invoice 181/234 |
+2026-01-10 02:35:01,100 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4921 bytes | Attempt: 1 | | Invoice 198/234 |
+2026-01-10 02:35:03,244 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7432 bytes | Attempt: 1 | | Invoice 182/234 |
+2026-01-10 02:35:03,500 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4859 bytes | Attempt: 1 | | Invoice 183/234 |
+2026-01-10 02:35:05,271 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4879 bytes | Attempt: 1 | | Invoice 199/234 |
+2026-01-10 02:35:05,503 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8245 bytes | Attempt: 1 | | Invoice 200/234 |
+2026-01-10 02:35:05,759 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 27129 bytes | Attempt: 1 | | Invoice 201/234 |
+2026-01-10 02:35:07,317 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4876 bytes | Attempt: 1 | | Invoice 184/234 |
+2026-01-10 02:35:07,538 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7738 bytes | Attempt: 1 | | Invoice 185/234 |
+2026-01-10 02:35:07,857 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4888 bytes | Attempt: 1 | | Invoice 186/234 |
+2026-01-10 02:35:08,136 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6563 bytes | Attempt: 1 | | Invoice 187/234 |
+2026-01-10 02:35:08,428 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 25441 bytes | Attempt: 1 | | Invoice 188/234 |
+2026-01-10 02:35:09,894 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4926 bytes | Attempt: 1 | | Invoice 202/234 |
+2026-01-10 02:35:10,188 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23323 bytes | Attempt: 1 | | Invoice 203/234 |
+2026-01-10 02:35:10,448 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 25448 bytes | Attempt: 1 | | Invoice 204/234 |
+2026-01-10 02:35:10,752 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4933 bytes | Attempt: 1 | | Invoice 205/234 |
+2026-01-10 02:35:11,007 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7160 bytes | Attempt: 1 | | Invoice 206/234 |
+2026-01-10 02:35:11,163 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-29 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:11,308 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-29 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:11,459 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-29 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:11,619 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-29 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:11,894 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,026 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,174 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,321 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,478 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,659 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,826 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:12,986 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:13,134 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:13,281 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-47 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:15,207 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5507 bytes | Attempt: 5 | | Invoice 207/234 |
+2026-01-10 02:35:15,482 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7146 bytes | Attempt: 1 | | Invoice 208/234 |
+2026-01-10 02:35:15,801 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 26837 bytes | Attempt: 1 | | Invoice 209/234 |
+2026-01-10 02:35:17,153 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5462 bytes | Attempt: 11 | | Invoice 189/234 |
+2026-01-10 02:35:17,414 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6190 bytes | Attempt: 1 | | Invoice 190/234 |
+2026-01-10 02:35:18,014 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5013 bytes | Attempt: 1 | | Invoice 191/234 |
+2026-01-10 02:35:20,397 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 13809 bytes | Attempt: 1 | | Invoice 210/234 |
+2026-01-10 02:35:20,644 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6511 bytes | Attempt: 1 | | Invoice 211/234 |
+2026-01-10 02:35:22,357 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6680 bytes | Attempt: 1 | | Invoice 192/234 |
+2026-01-10 02:35:22,624 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4903 bytes | Attempt: 1 | | Invoice 193/234 |
+2026-01-10 02:35:23,962 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4877 bytes | Attempt: 1 | | Invoice 212/234 |
+2026-01-10 02:35:25,988 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4854 bytes | Attempt: 1 | | Invoice 194/234 |
+2026-01-10 02:35:26,234 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4859 bytes | Attempt: 1 | | Invoice 195/234 |
+2026-01-10 02:35:28,096 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4845 bytes | Attempt: 1 | | Invoice 213/234 |
+2026-01-10 02:35:28,434 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5528 bytes | Attempt: 1 | | Invoice 214/234 |
+2026-01-10 02:35:28,683 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6659 bytes | Attempt: 1 | | Invoice 215/234 |
+2026-01-10 02:35:28,996 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7113 bytes | Attempt: 1 | | Invoice 216/234 |
+2026-01-10 02:35:29,322 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4835 bytes | Attempt: 1 | | Invoice 217/234 |
+2026-01-10 02:35:29,548 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-18 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:29,848 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4862 bytes | Attempt: 2 | | Invoice 218/234 |
+2026-01-10 02:35:30,048 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:30,110 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5397 bytes | Attempt: 1 | | Invoice 219/234 |
+2026-01-10 02:35:30,193 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:30,280 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:30,467 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:30,637 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:30,804 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:30,977 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:31,131 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:31,294 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:31,471 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:31,636 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:31,972 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:32,145 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:32,299 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:32,459 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:32,613 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:32,766 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:32,968 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:33,124 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:33,304 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:33,461 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:33,637 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:33,784 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:33,941 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:34,140 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:34,210 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:34,354 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:34,458 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:34,565 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-16 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:34,649 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-40 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:35:38,040 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4842 bytes | Attempt: 6 | | Invoice 196/234 |
+2026-01-10 02:35:38,045 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 24970 bytes | Attempt: 26 | | Invoice 220/234 |
+2026-01-10 02:35:38,290 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4889 bytes | Attempt: 1 | | Invoice 197/234 |
+2026-01-10 02:35:38,334 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5063 bytes | Attempt: 1 | | Invoice 221/234 |
+2026-01-10 02:35:38,568 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4921 bytes | Attempt: 1 | | Invoice 198/234 |
+2026-01-10 02:35:42,229 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4879 bytes | Attempt: 1 | | Invoice 199/234 |
+2026-01-10 02:35:42,235 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4989 bytes | Attempt: 1 | | Invoice 222/234 |
+2026-01-10 02:35:42,520 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 28242 bytes | Attempt: 1 | | Invoice 223/234 |
+2026-01-10 02:35:46,212 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4836 bytes | Attempt: 1 | | Invoice 224/234 |
+2026-01-10 02:35:46,217 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8245 bytes | Attempt: 1 | | Invoice 200/234 |
+2026-01-10 02:35:50,388 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4875 bytes | Attempt: 1 | | Invoice 225/234 |
+2026-01-10 02:35:50,479 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 27129 bytes | Attempt: 1 | | Invoice 201/234 |
+2026-01-10 02:35:54,257 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4864 bytes | Attempt: 1 | | Invoice 226/234 |
+2026-01-10 02:35:54,265 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4926 bytes | Attempt: 1 | | Invoice 202/234 |
+2026-01-10 02:35:58,245 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 23323 bytes | Attempt: 1 | | Invoice 203/234 |
+2026-01-10 02:35:58,270 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 20439 bytes | Attempt: 1 | | Invoice 227/234 |
+2026-01-10 02:36:02,329 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8454 bytes | Attempt: 1 | | Invoice 228/234 |
+2026-01-10 02:36:02,382 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 25448 bytes | Attempt: 1 | | Invoice 204/234 |
+2026-01-10 02:36:02,645 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7804 bytes | Attempt: 1 | | Invoice 229/234 |
+2026-01-10 02:36:03,027 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 25409 bytes | Attempt: 1 | | Invoice 230/234 |
+2026-01-10 02:36:06,030 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4933 bytes | Attempt: 1 | | Invoice 205/234 |
+2026-01-10 02:36:06,442 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7160 bytes | Attempt: 1 | | Invoice 206/234 |
+2026-01-10 02:36:06,875 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5507 bytes | Attempt: 1 | | Invoice 207/234 |
+2026-01-10 02:36:07,123 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5969 bytes | Attempt: 1 | | Invoice 231/234 |
+2026-01-10 02:36:07,356 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-4 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:07,520 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7146 bytes | Attempt: 1 | | Invoice 208/234 |
+2026-01-10 02:36:07,571 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-4 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:07,817 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-4 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:08,019 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-4 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:08,225 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-4 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:11,185 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 26837 bytes | Attempt: 1 | | Invoice 209/234 |
+2026-01-10 02:36:11,438 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 13809 bytes | Attempt: 1 | | Invoice 210/234 |
+2026-01-10 02:36:11,718 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6511 bytes | Attempt: 1 | | Invoice 211/234 |
+2026-01-10 02:36:12,209 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4877 bytes | Attempt: 1 | | Invoice 212/234 |
+2026-01-10 02:36:12,241 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4897 bytes | Attempt: 6 | | Invoice 232/234 |
+2026-01-10 02:36:12,377 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-23 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:12,459 - backend_.backend_service - ERROR -  Request failed,change proxy now | Invoice: 0106374735-1-3 | Error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-01-10 02:36:16,473 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4894 bytes | Attempt: 2 | | Invoice 233/234 |
+2026-01-10 02:36:16,484 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4845 bytes | Attempt: 2 | | Invoice 213/234 |
+2026-01-10 02:36:16,723 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4976 bytes | Attempt: 1 | | Invoice 234/234 |
+2026-01-10 02:36:16,947 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5053 bytes | Attempt: 1 | | Invoice 235/234 |
+2026-01-10 02:36:20,054 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5528 bytes | Attempt: 1 | | Invoice 214/234 |
+2026-01-10 02:36:20,379 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 6659 bytes | Attempt: 1 | | Invoice 215/234 |
+2026-01-10 02:36:24,391 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7113 bytes | Attempt: 1 | | Invoice 216/234 |
+2026-01-10 02:36:28,353 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4835 bytes | Attempt: 1 | | Invoice 217/234 |
+2026-01-10 02:36:29,088 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4862 bytes | Attempt: 1 | | Invoice 218/234 |
+2026-01-10 02:36:29,517 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5397 bytes | Attempt: 1 | | Invoice 219/234 |
+2026-01-10 02:36:33,055 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 24970 bytes | Attempt: 1 | | Invoice 220/234 |
+2026-01-10 02:36:33,337 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5063 bytes | Attempt: 1 | | Invoice 221/234 |
+2026-01-10 02:36:33,613 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4989 bytes | Attempt: 1 | | Invoice 222/234 |
+2026-01-10 02:36:34,042 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 28242 bytes | Attempt: 1 | | Invoice 223/234 |
+2026-01-10 02:36:34,310 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4836 bytes | Attempt: 1 | | Invoice 224/234 |
+2026-01-10 02:36:38,483 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4875 bytes | Attempt: 1 | | Invoice 225/234 |
+2026-01-10 02:36:38,803 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4864 bytes | Attempt: 1 | | Invoice 226/234 |
+2026-01-10 02:36:43,455 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 20439 bytes | Attempt: 1 | | Invoice 227/234 |
+2026-01-10 02:36:43,757 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 8454 bytes | Attempt: 1 | | Invoice 228/234 |
+2026-01-10 02:36:44,010 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 7804 bytes | Attempt: 1 | | Invoice 229/234 |
+2026-01-10 02:36:44,307 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 25409 bytes | Attempt: 1 | | Invoice 230/234 |
+2026-01-10 02:36:44,588 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5969 bytes | Attempt: 1 | | Invoice 231/234 |
+2026-01-10 02:36:44,833 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4897 bytes | Attempt: 1 | | Invoice 232/234 |
+2026-01-10 02:36:49,133 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4894 bytes | Attempt: 1 | | Invoice 233/234 |
+2026-01-10 02:36:49,385 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 4976 bytes | Attempt: 1 | | Invoice 234/234 |
+2026-01-10 02:36:49,812 - backend_.backend_service - INFO -  Got invoice detail | Status: 200 | Response size: 5053 bytes | Attempt: 1 | | Invoice 235/234 |

@@ -18,19 +18,26 @@ import subprocess
 import sys
 import uuid
 import threading
-import torch
 
-_original_torch_load = torch.load
-def _patched_torch_load(*args, **kwargs):
-    if 'weights_only' not in kwargs:
-        kwargs['weights_only'] = False
-    return _original_torch_load(*args, **kwargs)
-torch.load = _patched_torch_load
+# Lazy-load torch (Windows DLL safety: prevent loading until needed)
+_torch_loaded = False
+def _ensure_torch_loaded():
+    global _torch_loaded
+    if not _torch_loaded:
+        import torch
+        _original_torch_load = torch.load
+        def _patched_torch_load(*args, **kwargs):
+            if 'weights_only' not in kwargs:
+                kwargs['weights_only'] = False
+            return _original_torch_load(*args, **kwargs)
+        torch.load = _patched_torch_load
+        _torch_loaded = True
+        return torch
+    return __import__('torch')
 
-try:
-        import vietocr
-except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "vietocr"])
+# vietocr must be in requirements.txt - do not auto-install at module level
+# (REMOVED: auto pip-install that could cause subprocess DLL conflicts)
+
 def count_files( folderPath):
         """ Đếm số file trong thư mục """
         return len([f for f in os.listdir(folderPath) if os.path.isfile(os.path.join(folderPath, f))])
@@ -38,6 +45,7 @@ import shutil
 
 class DetectWorker():
     def __init__(self,input_path:str = None,type_:int = 0, cached_models=None, job_id=None, total_cccd=0):
+        _ensure_torch_loaded()  # Lazy-load torch DLL on first use (Windows DLL safety)
         super().__init__()
         self.path_img = input_path
         self.path_rs = None

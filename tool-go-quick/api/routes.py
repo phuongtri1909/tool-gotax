@@ -8,26 +8,37 @@ import base64
 import threading
 import json
 import asyncio
+import importlib.util
 
-# Thêm parent directory vào path để import main
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Thư mục gốc của tool-go-quick (không phụ thuộc sys.path để tránh nhầm với tool-go-invoice)
+_GO_QUICK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Lazy import - chỉ import khi cần dùng
 CCCDExtractor = None
 CCCDExtractorStreaming = None
 
+def _load_go_quick_main():
+    """Load module main từ tool-go-quick (tránh import nhầm main của tool-go-invoice)."""
+    main_path = os.path.join(_GO_QUICK_DIR, "main.py")
+    spec = importlib.util.spec_from_file_location("go_quick_main", main_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
 def get_cccd_extractor():
-    global CCCDExtractor
+    global CCCDExtractor, CCCDExtractorStreaming
     if CCCDExtractor is None:
-        from main import CCCDExtractor as _CCCDExtractor
-        CCCDExtractor = _CCCDExtractor
+        go_quick_main = _load_go_quick_main()
+        CCCDExtractor = go_quick_main.CCCDExtractor
+        CCCDExtractorStreaming = go_quick_main.CCCDExtractorStreaming
     return CCCDExtractor
 
 def get_cccd_extractor_streaming():
-    global CCCDExtractorStreaming
+    global CCCDExtractor, CCCDExtractorStreaming
     if CCCDExtractorStreaming is None:
-        from main import CCCDExtractorStreaming as _CCCDExtractorStreaming
-        CCCDExtractorStreaming = _CCCDExtractorStreaming
+        go_quick_main = _load_go_quick_main()
+        CCCDExtractor = go_quick_main.CCCDExtractor
+        CCCDExtractorStreaming = go_quick_main.CCCDExtractorStreaming
     return CCCDExtractorStreaming
 
 _model_cache = {
@@ -59,9 +70,8 @@ def get_model_cache():
         
         logger.info("🔄 Đang load models lần đầu (sẽ cache để tái sử dụng)...")
         
-        import main
-        main_file_dir = os.path.dirname(os.path.abspath(main.__file__))
-        base_dir = os.path.join(main_file_dir, "__pycache__")
+        # Dùng thư mục tool-go-quick (tránh nhầm với tool-go-invoice khi api_server thêm nhiều path)
+        base_dir = os.path.join(_GO_QUICK_DIR, "__pycache__")
         _model_cache['base_dir'] = base_dir
         
         try:

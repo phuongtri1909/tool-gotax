@@ -428,16 +428,11 @@ def main():
     # Test Redis connection
     try:
         redis_client.ping()
-        logger.info("✅ Kết nối Redis thành công")
     except Exception as e:
-        logger.error(f"❌ Lỗi kết nối Redis: {e}")
+        logger.error("Lỗi Redis: %s" % e)
         return
-    
     max_concurrent = int(os.getenv('WORKER_MAX_CONCURRENT', '10'))
-    queue_length = redis_client.llen(QUEUE_GO_SOFT)
-    
-    logger.info(f"🚀 Go-Soft Worker đã khởi động")
-    logger.info(f"📋 Queue: {QUEUE_GO_SOFT}, Số job trong queue: {queue_length}, Số job đồng thời tối đa: {max_concurrent}")
+    logger.info("Go-Soft Worker ready | queue: %s, max: %s" % (QUEUE_GO_SOFT, max_concurrent))
     
     # Create semaphore to limit concurrent jobs
     semaphore = asyncio.Semaphore(max_concurrent)

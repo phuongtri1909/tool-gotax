@@ -1,0 +1,19 @@
+PyQt5
+PyQt5-Qt5
+PyQt5-sip
+PyQt5Designer
+requests
+selenium
+openpyxl
+beautifulsoup4
+pywin32
+pyhtml2pdf
+bs4
+#csv
+pandas
+wmi
+pip-system-certs
+random_user_agent
+playwright
+# Tra cuu MST/CMT can giai captcha (TensorFlow). Tren Windows neu loi DLL: cai Visual C++ Redistributable x64 (https://aka.ms/vs/17/release/vc_redist.x64.exe)
+tensorflow==2.18.0

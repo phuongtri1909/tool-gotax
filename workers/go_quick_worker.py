@@ -17,8 +17,8 @@ from shared.redis_client import get_redis_client, publish_progress, is_job_cance
 tool_go_quick_path = os.path.join(project_root, 'tool-go-quick')
 sys.path.insert(0, tool_go_quick_path)
 
-# Import model cache và extractor
-from api.routes import get_model_cache, get_cccd_extractor_streaming
+# MOVED to main(): from api.routes import get_model_cache, get_cccd_extractor_streaming
+# Reason: Avoid loading torch DLL when worker module is imported (Windows DLL safety)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -291,9 +291,11 @@ async def process_job_wrapper(job_data):
 
 async def main():
     """Main worker loop - xử lý nhiều jobs parallel"""
+    # Lazy-load model cache here to prevent torch DLL loading at module import time (Windows DLL safety)
+    from api.routes import get_model_cache, get_cccd_extractor_streaming
+    
     redis_client = get_redis_client()
-    logger.info(f"🚀 Go-Quick Worker started, listening on queue: {QUEUE_GO_QUICK}")
-    logger.info(f"📊 Worker sẽ xử lý nhiều jobs parallel (không block)")
+    logger.info("Go-Quick Worker ready | queue: %s" % QUEUE_GO_QUICK)
     
     # Set để track các tasks đang chạy
     running_tasks = set()

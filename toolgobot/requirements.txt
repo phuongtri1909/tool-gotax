@@ -6,7 +6,7 @@ requests
 selenium
 openpyxl
 beautifulsoup4
-pywin32
+# pywin32
 pyhtml2pdf
 bs4
 #csv

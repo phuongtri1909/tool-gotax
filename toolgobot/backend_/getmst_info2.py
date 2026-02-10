@@ -9,7 +9,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('testclf.log', encoding='utf-8'),
+        # logging.FileHandler('testclf.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -126,8 +126,8 @@ def get_data_Company(tax_code,session=None,proxy_dict=None):
             r = session.get(url, headers=headers, timeout=10)
             # If success (200), save and return
             if r.status_code == 200:
-                with open("testclf.html", "w", encoding="utf-8") as f:
-                    f.write(r.text)
+                # with open("testclf.html", "w", encoding="utf-8") as f:
+                #     f.write(r.text)
                 
                 # Extract company data
                 company_data = extract_company_data(r.text)
